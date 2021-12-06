@@ -120,7 +120,7 @@ def log_sig(x, n):
     log_sig = []
     for k in range(1, n + 1):
         # computing the k-th level of the log-signature
-        ls = sig[k - 1]
+        ls = sig[k - 1].copy()
         for i in range(2, k + 1):
             # here are the terms of the k-th level we get from (-1)**(i+1) * 1/i * X**i
             ls_i = 0
@@ -128,10 +128,10 @@ def log_sig(x, n):
             for partition in partitions:
                 # we have a specific partition x^l_1 * x^l_2 * ... * x^l_i with l_1 + l_2 + ... + l_i = k
                 partition = partition - 1  # indices start at 0
-                partition_tensor = sig[partition[0]]
+                partition_tensor = sig[partition[0]].copy()
                 for j in range(2, i + 1):
                     # compute the tensor product x^l_1 * ... * x^l_j
-                    partition_tensor = np.tensordot(partition_tensor, sig[partition[j - 1]], axes=0)
+                    partition_tensor = np.tensordot(partition_tensor, sig[partition[j - 1]].copy(), axes=0)
                 ls_i += partition_tensor
             ls += (-1) ** (i + 1) / i * ls_i
         log_sig.append(ls)

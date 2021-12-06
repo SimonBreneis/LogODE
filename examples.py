@@ -157,14 +157,14 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
     return solution, error_bound, toc - tic
 
 
-def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 147, 215, 316, 464, 681, 1000, 1470, 2150]),
+def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
                                      N_vec=np.array([1, 2, 3]), k=4, exact=False,
-                                     n_steps_vec=np.array([1, 2, 3, 5, 7, 10, 15, 22, 32]), method='RK45',
+                                     n_steps_vec=np.array([1, 2, 3, 10, 32]), method='RK45',
                                      atol=1e-09, rtol=1e-06, h=1e-07, norm=lo.l1, p=1, var_steps=15, show=False,
                                      save=False,
                                      dir='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
                                      rounds=10, adaptive_tol=False):
-    kind = 'smooth vector field, smooth path'
+    kind = 'smooth vector field, smooth pathqq'
     solutions = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec), 2))
     error_bounds = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
     times = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
