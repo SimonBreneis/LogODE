@@ -105,7 +105,7 @@ def get_partitions(k, i):
 
 def log_sig(x, n):
     """
-    Computes the log-signature of a path x up to level n.
+    Computes the log-signature of a path x up to level n, and returns a permuted version of that log-signature.
     :param x: The path, given as a vector
     :param n: The degree of the log-signature
     :return: A list of length n, the k-th element is a k-tensor which is the k-th level of the log-signature
@@ -135,6 +135,8 @@ def log_sig(x, n):
                 ls_i += partition_tensor
             ls += (-1) ** (i + 1) / i * ls_i
         log_sig.append(ls)
+    for i in range(n):
+        log_sig[i] = np.transpose(log_sig[i], [i + 1 - j for j in range(1, i + 2)])
     return log_sig
 
 
@@ -190,6 +192,10 @@ def vector_field(f_vec, ls, h=1e-05, norm=None, norm_estimate=None):
     :return: Solution on partition points
     """
     deg = len(ls)
+    '''
+    for i in range(deg):
+        ls[i] = np.transpose(ls[i], [i+1-j for j in range(1, i+2)])
+    '''
 
     if norm is None:
         if len(f_vec) >= deg:
