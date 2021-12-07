@@ -11,7 +11,7 @@ def trivial_sig(dim, N):
     :return:
     """
     result = [np.zeros([dim] * i) for i in range(N + 1)]
-    result[0][0] = 1.
+    result[0] = 1.
     return result
 
 
@@ -23,11 +23,10 @@ def sig_tensor_product(x, y, N=math.inf):
     :param y:
     :return:
     """
-    n = min(len(x), len(y), N)
-    z = [0] * n
-    for i in range(n):
-        z[i] = np.sum(np.array([np.tensordot(x[j], y[i - j], axes=0) for j in range(i + 1)]), axis=0)
-    return z
+    n = min(len(x), len(y), N+1)
+    res = [np.sum(np.array([np.tensordot(x[j], y[i - j], axes=0) for j in range(i + 1)]), axis=0) for i in range(n)]
+    res[0] = np.array(res[0])
+    return res
 
 
 def sig(x, N):
@@ -41,77 +40,37 @@ def sig(x, N):
     sig_vec = ts.stream2sig(x, N)
     indices = [int((dim ** (k + 1) - 1) / (dim - 1) + 0.1) for k in range(N + 1)]
     indices.insert(0, 0)
-    return [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * (i + 1)) for i in range(N + 1)]
-
-
-def get_partitions(k, i):
-    """
-    Returns a list of all partitions of k into i summands (no commutativity of the addition is assumed).
-    :param k:
-    :param i:
-    :return:
-    """
-    partitions = []
-    current_partition = np.zeros(i, dtype=int)
-    current_length = 0  # we have not yet added a number to current_partition
-
-    def get_next_partition():
-        nonlocal current_length
-
-        if current_length == i:  # we have a complete current_partition
-            if int(np.sum(current_partition)) == k:  # current_partition is an actual partition
-                partitions.append(current_partition.copy())
-            return
-
-        next_element = 1  # next element of current_partition
-        previous_sum = int(np.sum(current_partition[:current_length]))
-        current_length += 1  # increase current length as we will now add a next element to current_partition
-
-        while previous_sum + next_element + (i - current_length) <= k:
-            current_partition[current_length - 1] = next_element
-            get_next_partition()
-            next_element += 1
-
-        current_length -= 1
-
-    get_next_partition()
-    return partitions
+    res = [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * i) for i in range(N + 1)]
+    res[0] = float(res[0])
+    return res
 
 
 def sig_to_logsig(s):
-    N = len(s) - 1
-    log_sig = trivial_sig(len(s[1]), N)
-    log_sig[0][0] = 0.
-    for k in range(1, N + 1):
-        # computing the k-th level of the log-signature
-        ls = s[k - 1].copy()
-        for i in range(2, k + 1):
-            # here are the terms of the k-th level we get from (-1)**(i+1) * 1/i * X**i
-            ls_i = 0
-            partitions = get_partitions(k, i)
-            for partition in partitions:
-                # we have a specific partition x^l_1 * x^l_2 * ... * x^l_i with l_1 + l_2 + ... + l_i = k
-                partition = partition - 1  # indices start at 0
-                partition_tensor = s[partition[0]].copy()
-                for j in range(2, i + 1):
-                    # compute the tensor product x^l_1 * ... * x^l_j
-                    partition_tensor = np.tensordot(partition_tensor, s[partition[j - 1]].copy(), axes=0)
-                ls_i += partition_tensor
-            ls += (-1) ** (i + 1) / i * ls_i
-        log_sig[k] = ls
-    return log_sig
+    N = len(s)-1
+    s_ = s.copy()
+    s_[0] -= 1.
+    ls = s_.copy()
+    curr_tensor_prod = s_.copy()
+    for k in range(2, N+1):
+        curr_tensor_prod = sig_tensor_product(curr_tensor_prod, s_)
+        ls = [ls[i] + curr_tensor_prod[i]/k*(-1)**(k+1) for i in range(len(ls))]
+    return ls
+
+
+def sigg():
+    pass
 
 
 def logsig_to_sig(ls):
     N = len(ls) - 1
-    s = trivial_sig(len(ls[1]), N)
-    s += ls
+    s = ls.copy()
+    s[0] += 1.
     curr_tensor_prod = ls
     curr_factorial = 1.
     for k in range(2, N + 1):
         curr_tensor_prod = sig_tensor_product(curr_tensor_prod, ls)
         curr_factorial *= k
-        s += curr_tensor_prod / curr_factorial
+        s = [s[i] + curr_tensor_prod[i]/curr_factorial for i in range(len(s))]
     return s
 
 
@@ -156,7 +115,7 @@ class RoughPath:
         :param N:
         :return:
         """
-        pass
+        return trivial_sig(1, N)
 
 
 class RoughPathDiscrete(RoughPath):
@@ -230,7 +189,7 @@ class RoughPathDiscrete(RoughPath):
             left = sig(np.array([x_s, self.val[s_ind, :]]), N)
             right = sig(np.array([self.val[t_ind, :], x_t]), N)
             if self.store_signatures:
-                inner = self.incr_canonical(s_ind, t_ind)
+                inner = self.incr_canonical(s_ind, t_ind, N)
             else:
                 inner = sig(self.val[s_ind:(t_ind + 1), :], N)
             li = sig_tensor_product(left, inner, N)
