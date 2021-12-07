@@ -36,6 +36,8 @@ def sig(x, N):
     :param N:
     :return:
     """
+    if N == 1:
+        return [1., x[-1, :] - x[0, :]]
     dim = x.shape[1]
     sig_vec = ts.stream2sig(x, N)
     indices = [int((dim ** (k + 1) - 1) / (dim - 1) + 0.1) for k in range(N + 1)]
@@ -57,10 +59,6 @@ def sig_to_logsig(s):
     return ls
 
 
-def sigg():
-    pass
-
-
 def logsig_to_sig(ls):
     N = len(ls) - 1
     s = ls.copy()
@@ -72,6 +70,10 @@ def logsig_to_sig(ls):
         curr_factorial *= k
         s = [s[i] + curr_tensor_prod[i]/curr_factorial for i in range(len(s))]
     return s
+
+
+def logsig(x, N):
+    return sig_to_logsig(sig(x, N))
 
 
 def extend_logsig(ls, N):
@@ -131,11 +133,11 @@ class RoughPathDiscrete(RoughPath):
             n_intervals = [0] * n_discr_levels
             n_intervals[0] = length
             for i in range(n_discr_levels - 1):
-                n_intervals[i + 1] = np.ceil(n_intervals[i] / 2.)
+                n_intervals[i + 1] = int(n_intervals[i] / 2.)
             self.sig = [[trivial_sig(self.val.shape[1], max_degree) for _ in range(n_intervals[i])] for i in
                         range(n_discr_levels)]
             for j in range(n_intervals[0]):
-                self.sig[0][j] = sig(np.array([self.val[times[j], :], self.val[times[j + 1], :]]), max_degree)
+                self.sig[0][j] = sig(np.array([self.val[j, :], self.val[j+1, :]]), max_degree)
             for i in range(1, len(self.sig)):
                 for j in range(n_intervals[i]):
                     self.sig[i][j] = sig_tensor_product(self.sig[i - 1][2 * j], self.sig[i - 1][2 * j + 1], max_degree)
@@ -159,20 +161,20 @@ class RoughPathDiscrete(RoughPath):
             # the interval can then only be [approx_diff, 2*approx_diff] if s_ind_ + diff >= 2*approx_diff.
             if s_ind_ + diff >= 2 * approx_diff:
                 inner = self.sig[approx_level][int(s_ind / approx_diff) + 1][:(N + 1)]
-                left = self.incr_canonical(s_ind, int(s_ind / approx_diff) * (approx_diff + 1), N)
-                right = self.incr_canonical(int(s_ind / approx_diff) * (approx_diff + 2), N)
+                left = self.incr_canonical(s_ind, int(s_ind / approx_diff + 1) * approx_diff, N)
+                right = self.incr_canonical(int(s_ind / approx_diff + 2) * approx_diff, t_ind, N)
             else:
                 # we conclude that there is no dyadic interval of length approx_diff in [s_ind, t_ind]. We thus can find
                 # at least one interval of length approx_diff/2.
                 inner = self.sig[approx_level - 1][int(s_ind / approx_diff * 2) + 1][:(N + 1)]
-                left = self.incr_canonical(s_ind, int(s_ind / approx_diff * 2) * (approx_diff / 2 + 1), N)
-                right = self.incr_canonical(int(s_ind / approx_diff * 2) * (approx_diff / 2 + 2), N)
+                left = self.incr_canonical(s_ind, int(int(s_ind / approx_diff * 2 + 1) * (approx_diff / 2)), N)
+                right = self.incr_canonical(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
         li = sig_tensor_product(left, inner, N)
         return sig_tensor_product(li, right, N)
 
     def incr(self, s, t, N):
-        s_ind = np.sum(map(lambda x: x < s, self.times))
-        t_ind = np.sum(map(lambda x: x <= t, self.times)) - 1
+        s_ind = sum(map(lambda x: x < s, self.times))
+        t_ind = sum(map(lambda x: x <= t, self.times)) - 1
         x_s = self.val[0, :]
         if s_ind > 0:
             x_s = self.val[s_ind - 1, :] + (self.val[s_ind, :] - self.val[s_ind - 1, :]) * (
@@ -204,7 +206,7 @@ class RoughPathContinuous(RoughPath):
         self.n_steps = n_steps
 
     def incr(self, s, t, N):
-        return sig(self.path(np.linspace(s, t, self.n_steps + 1)), N)
+        return sig(self.path(np.linspace(s, t, self.n_steps + 1)).T, N)
 
 
 class RoughPathExact(RoughPath):

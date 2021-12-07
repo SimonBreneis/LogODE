@@ -77,14 +77,7 @@ def log_sig(x, n):
     :param n: The degree of the log-signature
     :return: A list of length n, the k-th element is a k-tensor which is the k-th level of the log-signature
     """
-    if n == 1:
-        return [x[-1, :] - x[0, :]]
-
-    dim = np.shape(x)[1]
-    sig_vec = ts.stream2sig(x, n)
-    indices = np.array([int((dim ** (k + 1) - 1) / (dim - 1) + 0.1) for k in range(n + 1)])
-    sig = [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * (i + 1)) for i in range(n)]
-    ls = rp.sig_to_logsig(sig)[1:]
+    ls = rp.logsig(x, n)[1:]
     for i in range(n):
         ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
     return log_sig
