@@ -132,8 +132,7 @@ def extend_sig(s, N):
 
 
 class RoughPath:
-    def __init__(self, max_degree, p=1, var_steps=15, norm=l1):
-        self.max_degree = max_degree
+    def __init__(self, p=1, var_steps=15, norm=l1):
         self.p = p
         self.var_steps = var_steps
         self.norm = norm
@@ -182,26 +181,31 @@ class RoughPath:
 
 
 class RoughPathDiscrete(RoughPath):
-    def __init__(self, times, values, max_degree=math.inf, p=1., var_steps=15, norm=l1, store_signatures=False):
-        super().__init__(max_degree, p, var_steps, norm)
+    def __init__(self, times, values, p=1., var_steps=15, norm=l1, save_level=0):
+        super().__init__(p, var_steps, norm)
         self.times = times
         self.val = values
-        self.store_signatures = store_signatures
+        self.save_level = save_level
 
-        if store_signatures:
+        if save_level > 0:
             length = len(times) - 1
             n_discr_levels = int(np.log2(length)) + 1
             n_intervals = [0] * n_discr_levels
             n_intervals[0] = length
             for i in range(n_discr_levels - 1):
                 n_intervals[i + 1] = int(n_intervals[i] / 2.)
-            self.sig = [[trivial_sig(self.val.shape[1], max_degree) for _ in range(n_intervals[i])] for i in
+            self.sig = [[trivial_sig(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
                         range(n_discr_levels)]
             for j in range(n_intervals[0]):
-                self.sig[0][j] = sig(np.array([self.val[j, :], self.val[j+1, :]]), max_degree)
+                self.sig[0][j] = sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
             for i in range(1, len(self.sig)):
                 for j in range(n_intervals[i]):
-                    self.sig[i][j] = sig_tensor_product(self.sig[i - 1][2 * j], self.sig[i - 1][2 * j + 1], max_degree)
+                    self.sig[i][j] = sig_tensor_product(self.sig[i - 1][2 * j], self.sig[i - 1][2 * j + 1], save_level)
+
+    def get_sig(self, i, j, N):
+        if N <= self.save_level:
+            return self.sig[i][j][:(N+1)]
+        return extend_sig(self.sig[i][j], N)
 
     def incr_canonical(self, s_ind, t_ind, N):
         if s_ind == t_ind:
@@ -215,19 +219,19 @@ class RoughPathDiscrete(RoughPath):
         # now that we reduced the setting to s_ind_ being in [0, approx_diff), we see that if there is an interval of
         # length approx_diff, it must be either [0, approx_diff] (if s_ind_==0), or [approx_diff, 2*approx_diff].
         if s_ind_ == 0:
-            inner = self.sig[approx_level][int(s_ind / approx_diff)][:(N + 1)]
+            inner = self.get_sig(approx_level, int(s_ind / approx_diff), N)
             left = trivial_sig(self.val.shape[1], N)
             right = self.incr_canonical(s_ind + approx_diff, t_ind, N)
         else:
             # the interval can then only be [approx_diff, 2*approx_diff] if s_ind_ + diff >= 2*approx_diff.
             if s_ind_ + diff >= 2 * approx_diff:
-                inner = self.sig[approx_level][int(s_ind / approx_diff) + 1][:(N + 1)]
+                inner = self.get_sig(approx_level, int(s_ind / approx_diff) + 1, N)
                 left = self.incr_canonical(s_ind, int(s_ind / approx_diff + 1) * approx_diff, N)
                 right = self.incr_canonical(int(s_ind / approx_diff + 2) * approx_diff, t_ind, N)
             else:
                 # we conclude that there is no dyadic interval of length approx_diff in [s_ind, t_ind]. We thus can find
                 # at least one interval of length approx_diff/2.
-                inner = self.sig[approx_level - 1][int(s_ind / approx_diff * 2) + 1][:(N + 1)]
+                inner = self.get_sig(approx_level - 1, int(s_ind / approx_diff * 2) + 1, N)
                 left = self.incr_canonical(s_ind, int(int(s_ind / approx_diff * 2 + 1) * (approx_diff / 2)), N)
                 right = self.incr_canonical(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
         li = sig_tensor_product(left, inner, N)
@@ -251,7 +255,7 @@ class RoughPathDiscrete(RoughPath):
         else:  # (s_ind < t_ind)
             left = sig(np.array([x_s, self.val[s_ind, :]]), N)
             right = sig(np.array([self.val[t_ind, :], x_t]), N)
-            if self.store_signatures:
+            if self.save_level > 0:
                 inner = self.incr_canonical(s_ind, t_ind, N)
             else:
                 inner = sig(self.val[s_ind:(t_ind + 1), :], N)
@@ -262,7 +266,7 @@ class RoughPathDiscrete(RoughPath):
 
 class RoughPathContinuous(RoughPath):
     def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
-        super().__init__(math.inf, p, var_steps, norm)
+        super().__init__(p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
 
@@ -272,7 +276,7 @@ class RoughPathContinuous(RoughPath):
 
 class RoughPathExact(RoughPath):
     def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
-        super().__init__(math.inf, p, var_steps, norm)
+        super().__init__(p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
 

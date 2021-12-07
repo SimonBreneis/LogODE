@@ -472,4 +472,3 @@ def log_ode_user(x, f_vec, y_0, T, n_steps=100, method='RK45', eps=1e-03, atol=1
                 max_local_error[i] = max_local_error[i] / (len(new_subpartition) - 1)
             local_Ns[i] = new_local_N
     return np.array(partition), np.array(y)
-
