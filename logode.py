@@ -3,6 +3,7 @@ import scipy
 from scipy import integrate, special
 from esig import tosig as ts
 import p_var
+import roughpath as rp
 
 
 def l1(x):
@@ -69,40 +70,6 @@ def variation_greedy(x, p, dist):
     return (variation_greedy(x[:cut + 1], p, dist) ** p + variation_greedy(x[cut:], p, dist) ** p) ** (1 / p)
 
 
-def get_partitions(k, i):
-    """
-    Returns a list of all partitions of k into i summands (no commutativity of the addition is assumed).
-    :param k:
-    :param i:
-    :return:
-    """
-    partitions = []
-    current_partition = np.zeros(i, dtype=int)
-    current_length = 0  # we have not yet added a number to current_partition
-
-    def get_next_partition():
-        nonlocal current_length
-
-        if current_length == i:  # we have a complete current_partition
-            if int(np.sum(current_partition)) == k:  # current_partition is an actual partition
-                partitions.append(current_partition.copy())
-            return
-
-        next_element = 1  # next element of current_partition
-        previous_sum = int(np.sum(current_partition[:current_length]))
-        current_length += 1  # increase current length as we will now add a next element to current_partition
-
-        while previous_sum + next_element + (i - current_length) <= k:
-            current_partition[current_length - 1] = next_element
-            get_next_partition()
-            next_element += 1
-
-        current_length -= 1
-
-    get_next_partition()
-    return partitions
-
-
 def log_sig(x, n):
     """
     Computes the log-signature of a path x up to level n, and returns a permuted version of that log-signature.
@@ -117,27 +84,11 @@ def log_sig(x, n):
     sig_vec = ts.stream2sig(x, n)
     indices = np.array([int((dim ** (k + 1) - 1) / (dim - 1) + 0.1) for k in range(n + 1)])
     sig = [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * (i + 1)) for i in range(n)]
-    log_sig = []
-    for k in range(1, n + 1):
-        # computing the k-th level of the log-signature
-        ls = sig[k - 1].copy()
-        for i in range(2, k + 1):
-            # here are the terms of the k-th level we get from (-1)**(i+1) * 1/i * X**i
-            ls_i = 0
-            partitions = get_partitions(k, i)
-            for partition in partitions:
-                # we have a specific partition x^l_1 * x^l_2 * ... * x^l_i with l_1 + l_2 + ... + l_i = k
-                partition = partition - 1  # indices start at 0
-                partition_tensor = sig[partition[0]].copy()
-                for j in range(2, i + 1):
-                    # compute the tensor product x^l_1 * ... * x^l_j
-                    partition_tensor = np.tensordot(partition_tensor, sig[partition[j - 1]].copy(), axes=0)
-                ls_i += partition_tensor
-            ls += (-1) ** (i + 1) / i * ls_i
-        log_sig.append(ls)
+    ls = rp.sig_to_logsig(sig)[1:]
     for i in range(n):
-        log_sig[i] = np.transpose(log_sig[i], [i + 1 - j for j in range(1, i + 2)])
+        ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
     return log_sig
+
 
 
 def vfd(f, y, dx, n, h=1e-05):
@@ -192,10 +143,6 @@ def vector_field(f_vec, ls, h=1e-05, norm=None, norm_estimate=None):
     :return: Solution on partition points
     """
     deg = len(ls)
-    '''
-    for i in range(deg):
-        ls[i] = np.transpose(ls[i], [i+1-j for j in range(1, i+2)])
-    '''
 
     if norm is None:
         if len(f_vec) >= deg:
