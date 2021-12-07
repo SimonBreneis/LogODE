@@ -14,9 +14,14 @@ k = 4
 x = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
 s = 0.2005
 t = 0.3005
+s = 0.
+t = 1.
+print(rp.beta(1)*lo.var(x(np.linspace(s, t, 16)).T, 1., lambda a, b: rp.l1(b-a)))
 N = 3
 n_steps = 15
 rough_path = rp.RoughPathDiscrete(np.linspace(0, 1, 1501), x(np.linspace(0, 1, 1501)).T, max_degree=4, store_signatures=True)
+print(rough_path.p_variation(s, t, 2., 15, rp.l1))
+print(rough_path.omega(s, t, 2.))
 print(rough_path.incr(s, t, N))
 print(ts.stream2sig(x(np.linspace(s, t, 10*n_steps+1)).T, N))
 time.sleep(3600)

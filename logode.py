@@ -83,7 +83,6 @@ def log_sig(x, n):
     return log_sig
 
 
-
 def vfd(f, y, dx, n, h=1e-05):
     """
     Computes the nth derivative of a vector field.

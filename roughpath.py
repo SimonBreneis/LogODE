@@ -1,6 +1,32 @@
 import numpy as np
 import math
 from esig import tosig as ts
+import scipy
+import p_var
+
+
+def l1(x):
+    return np.sum(np.abs(x))
+
+
+def var(x, p, dist):
+    return p_var.p_var_backbone(np.shape(x)[0], p, lambda a, b: dist(x[a, :], x[b, :])).value ** (1 / p)
+
+
+def beta(p):
+    """
+    Computes beta = p * (1 + sum_{r=2}^infinity (2/r)^((p+1)/p)).
+    :param p: The roughness
+    :return: beta
+    """
+    if p == 1:
+        return 2 * np.pi ** 2 / 3 - 3
+    if p == 2:
+        return 11.12097
+    if p == 3:
+        return 22.66186
+    else:
+        return beta(min(3, int(p)))
 
 
 def trivial_sig(dim, N):
@@ -106,8 +132,11 @@ def extend_sig(s, N):
 
 
 class RoughPath:
-    def __init__(self, max_degree):
+    def __init__(self, max_degree, p=1, var_steps=15, norm=l1):
         self.max_degree = max_degree
+        self.p = p
+        self.var_steps = var_steps
+        self.norm = norm
 
     def incr(self, s, t, N):
         """
@@ -119,10 +148,42 @@ class RoughPath:
         """
         return trivial_sig(1, N)
 
+    def p_variation(self, s, t, p, var_steps, norm):
+        levels = int(p)
+        times = np.linspace(s, t, var_steps+1)
+        increments = [self.incr(times[i], times[i+1], levels) for i in range(var_steps)]
+        variations = np.zeros(levels)
+        for level in range(1, levels+1):
+            def distance(i, j):
+                if j < i:
+                    temp = i
+                    i = j
+                    j = temp
+                elif i == j:
+                    return 0.
+                total_increment = increments[i][:(level+1)]
+                for k in range(i+1, j):
+                    total_increment = sig_tensor_product(total_increment, increments[k][:(level+1)])
+                return norm(total_increment[level])
+            variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
+        return variations
+
+    def omega(self, s, t, p=0., var_steps=0, norm=None):
+        if p == 0.:
+            p = self.p
+        if var_steps == 0:
+            var_steps = self.var_steps
+        if norm is None:
+            norm = self.norm
+        variations = self.p_variation(s, t, p, var_steps, norm)
+        omegas = beta(p) * np.array([scipy.special.gamma(i/p + 1) for i in range(1, int(p)+1)]) * variations
+        omegas = np.array([omegas[i]**(p/(i+1)) for i in range(int(p))])
+        return np.amax(omegas)
+
 
 class RoughPathDiscrete(RoughPath):
-    def __init__(self, times, values, max_degree=math.inf, store_signatures=False):
-        super().__init__(max_degree)
+    def __init__(self, times, values, max_degree=math.inf, p=1., var_steps=15, norm=l1, store_signatures=False):
+        super().__init__(max_degree, p, var_steps, norm)
         self.times = times
         self.val = values
         self.store_signatures = store_signatures
@@ -200,8 +261,8 @@ class RoughPathDiscrete(RoughPath):
 
 
 class RoughPathContinuous(RoughPath):
-    def __init__(self, path, n_steps=15):
-        super().__init__(math.inf)
+    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
+        super().__init__(math.inf, p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
 
@@ -210,8 +271,8 @@ class RoughPathContinuous(RoughPath):
 
 
 class RoughPathExact(RoughPath):
-    def __init__(self, path, n_steps=15):
-        super().__init__(max_degree=math.inf)
+    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
+        super().__init__(math.inf, p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
 
