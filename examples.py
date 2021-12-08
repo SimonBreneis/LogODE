@@ -148,9 +148,9 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
         vec_field = vf.VectorField([f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = lo.log_ode(x=x, f=vec_field, y_0=y_0, N=N, partition=partition, method=method, atol=atol,
-                                       rtol=rtol, p=p)
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -161,7 +161,7 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
 def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
                                      N_vec=np.array([1, 2, 3]), k=4, exact=False,
                                      n_steps_vec=np.array([1, 10, 100, 1000]), method='RK45',
-                                     atol=1e-09, rtol=1e-06, h=1e-07, norm=lo.l1, p=1, var_steps=15, show=False,
+                                     atol=1e-09, rtol=1e-06, h=1e-07, norm=rp.l1, p=1, var_steps=15, show=False,
                                      save=False,
                                      dir='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
                                      rounds=10, adaptive_tol=False):
