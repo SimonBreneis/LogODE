@@ -8,19 +8,6 @@ def l1(x):
     return np.sum(np.abs(x))
 
 
-def log_sig(x, n):
-    """
-    Computes the log-signature of a path x up to level n, and returns a permuted version of that log-signature.
-    :param x: The path, given as a vector
-    :param n: The degree of the log-signature
-    :return: A list of length n, the k-th element is a k-tensor which is the k-th level of the log-signature
-    """
-    ls = rp.logsig(x, n)[1:]
-    for i in range(n):
-        ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
-    return ls
-
-
 def vfd(f_vec, y, dx, h=1e-05):
     """
     Computes the nth derivative of a vector field.
