@@ -1,46 +1,11 @@
 import numpy as np
 import scipy
 from scipy import integrate, special
-from esig import tosig as ts
-import p_var
 import roughpath as rp
 
 
 def l1(x):
     return np.sum(np.abs(x))
-
-
-def l2(x):
-    """
-    Computes the l2-norm of a vector x.
-    :param x: The vector
-    :return: The l2-norm
-    """
-    return np.sqrt(np.sum(x ** 2))
-
-
-def var(x, p, dist):
-    return p_var.p_var_backbone(np.shape(x)[0], p, lambda a, b: dist(x[a, :], x[b, :])).value ** (1 / p)
-
-
-def var_sparse(x, p, dist, n=15):
-    n = min(n, len(x))
-    indices = np.around(np.linspace(0, len(x) - 1, n)).astype(int)
-    return var(x[indices], p, dist)
-
-
-def var_path(x, s, t, p, dist, n=15):
-    """
-    Computes an estimate for the p-variation of x on [s,t] using n equidistant points.
-    :param x: The path
-    :param s: Initial interval point
-    :param t: Final interval point
-    :param p: Roughness of the path
-    :param dist: Metric
-    :param n: Number of points used for the estimate of the p-variation
-    :return: Estimate (lower bound) for the p-variation
-    """
-    return var(x(np.linspace(s, t, n)).T, p, dist)
 
 
 def log_sig(x, n):
@@ -67,24 +32,15 @@ def vfd(f_vec, y, dx, h=1e-05):
     """
     N = len(dx.shape)
     if N <= len(f_vec):
-        return f_vec[N-1](y, dx)
+        return f_vec[N - 1](y, dx)
     x_dim = np.shape(dx)[0]
-    '''
-    if n == 1:
-        result = 0
-        for i in range(np.shape(dx)[0]):
-            direction = np.einsum('ij,j->i', f(y), x[i, :])
-            result += (f(y + h/2 * direction)[:, i] - f(y - h/2 * direction)[:, i])/h
-        return result.T
-    '''
     result = 0
     for i in range(x_dim):
         vec = np.zeros(x_dim)
         vec[i] = 1.
         direction = f_vec[0](y, vec)
-        result += (vfd(f_vec, y + h / 2 * direction, dx[..., i], h) - vfd(f_vec, y - h / 2 * direction, dx[..., i],
-                                                                             h)) / h
-        # result += (f(y + h / 2 * direction) @ x[:, i] - f(y - h / 2 * direction) @ x[:, i]) / h
+        result += (vfd(f_vec, y + h / 2 * direction, dx[..., i], h)
+                   - vfd(f_vec, y - h / 2 * direction, dx[..., i], h)) / h
     return result
 
 
@@ -123,7 +79,7 @@ def vector_field(f_vec, ls, h=1e-05, norm=None, norm_estimate=None):
     return vf_norm
 
 
-def log_ode_step_rp(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None):
+def log_ode_step(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None):
     """
     Implementation of the Log-ODE method.
     :param x: Driving rough path
@@ -159,7 +115,7 @@ def log_ode_step_rp(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-0
     return y, norm_estimate[0], omega
 
 
-def log_ode_rp(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1):
+def log_ode(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1):
     """
     Implementation of the Log-ODE method.
     :param x: Driving rough path
@@ -186,99 +142,10 @@ def log_ode_rp(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-0
 
     error_estimate = 0.
     for i in range(1, len(partition)):
-        y[:, i], vf_norm, omega = log_ode_step_rp(x, f_vec, y[:, i-1], N, partition[i-1], partition[i], method, atol, rtol, h, norm)
-        error_estimate += vf_norm**(N+1) * omega**((N+1)/p)
+        y[:, i], vf_norm, omega = log_ode_step(x, f_vec, y[:, i - 1], N, partition[i - 1], partition[i], method,
+                                               atol, rtol, h, norm)
+        error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)
     return y, local_log_ode_error_constant(p, N, len(x.incr(partition[0], partition[1], 1)[1])) * error_estimate
-
-
-def log_ode_step(x, f_vec, y_0, deg, s, t, n_steps=100, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1,
-                 var_steps=15):
-    """
-    Implementation of the Log-ODE method.
-    :param x: Driving rough path
-    :param f_vec: Vector field, containing also the derivatives
-    :param y_0: Initial value
-    :param deg: The degree of the Log-ODE method (f needs to be Lip(N))
-    :param s: Initial interval point
-    :param t: Final interval point
-    :param n_steps: Number of (equidistant) steps used in the approximation of the signature of x
-    :param method: A method for solving initial value problems implemented in the scipy.integrate library
-    :param atol: Absolute error tolerance of the ODE solver
-    :param rtol: Relative error tolerance of the ODE solver
-    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
-    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
-        computes an estimate of the p-variation of the underlying
-        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
-        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
-        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
-        as this is more relevant to the problem.
-    :param p: The exponent for which the p-variation of x should be computed.
-        This method is only reasonable if p < N
-    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
-        may be more inaccurate.
-    :return: Solution on partition points
-    """
-    x_vector = x(np.linspace(s, t, n_steps + 1)).T
-    log_signature = log_sig(x_vector, deg)
-
-    if norm is None:
-        vf = lambda t, z: vector_field(f_vec, log_signature, h)(z)
-        return integrate.solve_ivp(vf, (0, 1), y_0, method=method, atol=atol, rtol=rtol).y[:, -1]
-
-    norm_estimate = [0.]
-    vf = lambda t, z: vector_field(f_vec, log_signature, h, norm, norm_estimate)(z)
-    y = integrate.solve_ivp(vf, (0, 1), y_0, method=method, atol=atol, rtol=rtol).y[:, -1]
-    variation_estimate = var_sparse(x_vector, p, lambda a, b: norm(b - a), n=var_steps)
-    return y, norm_estimate[0], variation_estimate
-
-
-def log_ode(x, f_vec, y_0, deg, partition, n_steps=100, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1,
-            var_steps=15):
-    """
-    Implementation of the Log-ODE method.
-    :param x: Driving path given as a function
-    :param f_vec: Vector field, containing also the derivatives
-    :param y_0: Initial value
-    :param deg: The degree of the Log-ODE method (f needs to be Lip(N))
-    :param partition: Partition of the interval on which we apply the Log-ODE method
-    :param n_steps: Number of (equidistant) steps used in the approximation of the signature of x
-    :param method: A method for solving initial value problems implemented in the scipy.integrate library
-    :param atol: Absolute error tolerance of the ODE solver
-    :param rtol: Relative error tolerance of the ODE solver
-    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
-    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
-        computes an estimate of the p-variation of the underlying
-        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
-        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
-        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
-        as this is more relevant to the problem.
-    :param p: The exponent for which the p-variation of x should be computed.
-        This method is only reasonable if p < N
-    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
-        may be more inaccurate.
-    :return: Solution on partition points, error bound (-1 if no norm was specified)
-    """
-    y = np.zeros(shape=(len(y_0), len(partition)))
-    y[:, 0] = y_0
-
-    if norm is None:
-        for i in range(1, len(partition)):
-            x_vector = x(np.linspace(partition[i - 1], partition[i], n_steps + 1)).T
-            log_signature = log_sig(x_vector, deg)
-            vf = lambda t, z: vector_field(f_vec, log_signature, h)(z)
-            y[:, i] = integrate.solve_ivp(vf, (0, 1), y[:, i - 1], method=method, atol=atol, rtol=rtol).y[:, -1]
-        return y, -1
-
-    norm_estimate = [0.]
-    error_estimate = 0
-    for i in range(1, len(partition)):
-        x_vector = x(np.linspace(partition[i - 1], partition[i], n_steps + 1)).T
-        log_signature = log_sig(x_vector, deg)
-        vf = lambda t, z: vector_field(f_vec, log_signature, h, norm, norm_estimate)(z)
-        y[:, i] = integrate.solve_ivp(vf, (0, 1), y[:, i - 1], method=method, atol=atol, rtol=rtol).y[:, -1]
-        error_estimate += var_to_omega(var_sparse(x_vector, p, lambda a, b: norm(b - a), n=var_steps), p)**((deg+1.)/p) * norm_estimate[0]**(deg+1.)
-        norm_estimate[0] = 0.
-    return y, local_log_ode_error_constant(p, deg, len(x(0.)))*error_estimate
 
 
 def local_log_ode_error_constant(p, N, d):
@@ -296,93 +163,60 @@ def local_log_ode_error_constant(p, N, d):
     return 1000 * d ** 3 / scipy.special.gamma((N + 4) / 3.) + 0.038 * (7 / 3) ** (N + 1)
 
 
-def find_next_interval(x, s, t, p, dist, lower_var, upper_var, var_steps):
+def find_next_interval(x, s, t, lower_omega, upper_omega):
     """
-    Finds an interval of the form [s,u] with s <= u <= t such that lower_var <= var(x;[s,u]) <= upper_var.
+    Finds an interval of the form [s,u] with s <= u <= t such that lower_omega <= omega(s, u) <= upper_omega.
     :param x: The path
     :param s: Initial point of total interval
     :param t: Final point of total interval
-    :param p: Roughness of the path
-    :param dist: The metric
-    :param lower_var: Lower bound of the variation on the new interval
-    :param upper_var: Upper bound of the variation on the new interval
-    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
-        may be more inaccurate.
+    :param lower_omega: Lower bound of the control function on the new interval
+    :param upper_omega: Upper bound of the control function on the new interval
     :return: The partition point u.
     """
-    total_var = var_path(x, s, t, p, dist, var_steps)
-    if total_var <= upper_var:
+    total_omega = x.omega(s, t)
+    if total_omega <= upper_omega:
         return t
-    u_current = s + (t - s) * (lower_var + upper_var) / (2 * total_var)
+    u_current = s + (t - s) * (lower_omega + upper_omega) / (2 * total_omega)
     u_left = s
     u_right = t
 
-    current_var = var_path(x, s, u_current, p, dist, var_steps)
+    current_omega = x.omega(s, u_current)
 
-    while not lower_var <= current_var <= upper_var and u_right - u_left > (t - s) * 10 ** (-10):
-        if current_var > lower_var:
+    while not lower_omega <= current_omega <= upper_omega and u_right - u_left > (t - s) * 10 ** (-10):
+        if current_omega > lower_omega:
             u_right = u_current
         else:
             u_left = u_current
 
         u_current = (u_left + u_right) / 2
-        current_var = var_path(x, s, u_current, p, dist, var_steps)
+        current_omega = x.omega(s, u_current)
 
     return u_current
 
 
-def find_partition(x, s, t, p, dist, total_var, n, var_steps, q=2.):
+def find_partition(x, s, t, total_omega, n, q=2.):
     """
     Finds a partition of the interval [0,T] such that omega(0,T)/(qn) <= omega(s,t) <= q*omega(0,T)/n.
     :param x: The path
     :param s: Initial time
     :param t: Final time
-    :param p: Roughness of the path
-    :param dist: The metric
-    :param total_var: Estimate for the total variation of x on [0,T]
+    :param total_omega: Estimate for the total control function of x on [0,T]
     :param n: Approximate number of intervals into which [0,T] should be split
-    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
-        may be more inaccurate.
     :param q: Tolerance in finding the "perfect" partition.
     :return: The partition
     """
     q = max(q, 1.1)
+    p = x.p
     partition = [s]
-    lower_var = total_var / (q * n) ** (1 / p)
-    upper_var = total_var * (q / n) ** (1 / p)
-    print(f"Total variation: {total_var}")
-    print(f"Lower variation: {lower_var}")
-    print(f"Upper variation: {upper_var}")
+    lower_omega = total_omega / (q * n) ** (1 / p)
+    upper_omega = total_omega * (q / n) ** (1 / p)
+    print(f"Total omega: {total_omega}")
+    print(f"Lower omega: {lower_omega}")
+    print(f"Upper omega: {upper_omega}")
     while not partition[-1] == t:
-        next_point = find_next_interval(x, partition[-1], t, p, dist, lower_var, upper_var, var_steps)
+        next_point = find_next_interval(x, partition[-1], t, lower_omega, upper_omega)
         partition.append(next_point)
     return partition
-
-
-def beta(p):
-    """
-    Computes beta = p * (1 + sum_{r=2}^infinity (2/r)^((p+1)/p)).
-    :param p: The roughness
-    :return: beta
-    """
-    if p == 1:
-        return 2 * np.pi ** 2 / 3 - 3
-    if p == 2:
-        return 11.12097
-    if p == 3:
-        return 22.66186
-    else:
-        return beta(3)
-
-
-def var_to_omega(var, p):
-    """
-    Converts the p-variation of x to the corresponding control function.
-    :param var: The p-variation of x
-    :param p: The roughness of x
-    :return: Control function on that interval
-    """
-    return beta(p) * scipy.special.gamma(1. / p + 1) * var ** p
 
 
 def insert_list(master, insertion, index):
@@ -424,33 +258,29 @@ def log_ode_user(x, f_vec, y_0, T, n_steps=100, method='RK45', eps=1e-03, atol=1
     """
     p = int(p)
     d = len(x(0.))
-    dist = lambda a, b: norm(a - b)
     norm_estimates = np.zeros(10)
-    _, norm_estimates[0], var_estimate = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, deg=p, s=0, t=T,
-                                                      n_steps=max(n_steps, 100), method=method, atol=100 * atol,
-                                                      rtol=100 * rtol, h=h, norm=norm, p=p, var_steps=100)
-    _, norm_estimates[1], _ = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, deg=p + 1, s=0, t=T,
-                                           n_steps=max(n_steps, 100), method=method, atol=100 * atol,
-                                           rtol=100 * rtol, h=h, norm=norm, p=p, var_steps=100)
-    _, norm_estimates[2], _ = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, deg=p + 2, s=0, t=T,
-                                           n_steps=max(n_steps, 100), method=method, atol=100 * atol,
-                                           rtol=100 * rtol, h=h, norm=norm, p=p, var_steps=100)
+    x = rp.RoughPathContinuous(x, n_steps=max(n_steps, 100), p=p, var_steps=var_steps, norm=norm)
+    _, norm_estimates[0], omega_estimate = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, N=p, s=0, t=T, method=method,
+                                                        atol=100 * atol, rtol=100 * rtol, h=h, norm=norm)
+    _, norm_estimates[1], _ = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, N=p + 1, s=0, t=T, method=method,
+                                           atol=100 * atol, rtol=100 * rtol, h=h, norm=norm)
+    _, norm_estimates[2], _ = log_ode_step(x=x, f_vec=f_vec, y_0=y_0, N=p + 2, s=0, t=T, method=method,
+                                           atol=100 * atol, rtol=100 * rtol, h=h, norm=norm)
+    x.n_steps = n_steps
     norm_incr = max(norm_estimates[2] - norm_estimates[1], norm_estimates[1] - norm_estimates[0])
     norm_estimates[3:] = norm_estimates[2] + norm_incr * np.arange(1, 8)
     print(f"Norm estimates: {norm_estimates}")
     print(f"Error constants: {np.array([local_log_ode_error_constant(p, N, d) for N in range(p, p + 10)])}")
-    print(f"Omega: {var_to_omega(var_estimate, p)}")
+    print(f"Omega: {omega_estimate}")
     number_intervals = np.array([(local_log_ode_error_constant(p, N, d) * norm_estimates[N - p] ** (
-                N + 1) * var_to_omega(var_estimate, p) ** ((N + 1.) / p) / eps) ** (p / (N - p + 1)) for N in
-                                 range(p, p + 10)])
+            N + 1) * omega_estimate ** ((N + 1.) / p) / eps) ** (p / (N - p + 1)) for N in range(p, p + 10)])
     print(f"Number of intervals: {number_intervals}")
     complexity = np.array([d ** N for N in range(p, p + 10)]) * number_intervals
     N = np.argmin(complexity) + p
     print(f"N = {N}")
     number_intervals = (number_intervals[N - p] / 10) ** (2. / (1 + p))
     print("Let us find a partition!")
-    partition = find_partition(x=x, s=0, t=T, p=p, dist=dist, total_var=var_estimate, n=number_intervals,
-                               var_steps=var_steps)
+    partition = find_partition(x=x, s=0, t=T, total_omega=omega_estimate, n=number_intervals)
     print("We found a partition!")
     local_Ns = [N] * (len(partition) - 1)
     max_local_error = [eps / number_intervals] * (len(partition) - 1)
@@ -460,14 +290,12 @@ def log_ode_user(x, f_vec, y_0, T, n_steps=100, method='RK45', eps=1e-03, atol=1
     while i < len(partition) - 1:
         print(f"At index {i + 1} of {len(partition) - 1}")
         local_N = local_Ns[i]
-        y_next, norm_est, var_est = log_ode_step(x=x, f_vec=f_vec, y_0=y[i], deg=local_N, s=partition[i],
-                                                 t=partition[i + 1],
-                                                 n_steps=n_steps, method=method, atol=atol, rtol=rtol, h=h, norm=norm,
-                                                 p=p, var_steps=var_steps)
-        omega_est = var_to_omega(var_est, p)
+        y_next, norm_est, omega_est = log_ode_step(x=x, f_vec=f_vec, y_0=y[i], N=local_N, s=partition[i],
+                                                   t=partition[i + 1], method=method, atol=atol, rtol=rtol, h=h,
+                                                   norm=norm)
         print(f"Norm estimate: {norm_est}, Omega estimate: {omega_est}")
         error_est = local_log_ode_error_constant(p, local_N, d) * norm_est ** (local_N + 1) * omega_est ** (
-                    (local_N + 1.) / p)
+                (local_N + 1.) / p)
         print(f"Error estimate: {error_est}, Maximal error: {max_local_error[i]}")
         if error_est < max_local_error[i]:
             y.append(y_next)
@@ -478,18 +306,17 @@ def log_ode_user(x, f_vec, y_0, T, n_steps=100, method='RK45', eps=1e-03, atol=1
             subpartition = 1
             while new_error_est >= max_local_error[i]:
                 error_est_N = local_log_ode_error_constant(p, new_local_N + 1, d) * norm_est ** (
-                            new_local_N + 2) * omega_est ** ((new_local_N + 2.) / p)
+                        new_local_N + 2) * omega_est ** ((new_local_N + 2.) / p)
                 error_est_part = error_est / d ** ((new_local_N + 1) / p) * d
                 if error_est_N < error_est_part:
                     new_local_N += 1
                 else:
                     subpartition *= 4
                 new_error_est = subpartition * local_log_ode_error_constant(p, new_local_N, d) * norm_est ** (
-                            new_local_N + 1) * (omega_est / subpartition) ** ((new_local_N + 1.) / p)
+                        new_local_N + 1) * (omega_est / subpartition) ** ((new_local_N + 1.) / p)
             if subpartition > 1:
-                better_var_est = var_path(x, partition[i], partition[i + 1], p, dist, var_steps * 3)
-                new_subpartition = find_partition(x, partition[i], partition[i + 1], p, dist, better_var_est,
-                                                  subpartition, var_steps)
+                better_var_est = x.omega(partition[i], partition[i + 1], var_steps=var_steps * 3)
+                new_subpartition = find_partition(x, partition[i], partition[i + 1], better_var_est, subpartition)
                 insert_list(partition, new_subpartition[1:-1], i + 1)
                 insert_list(local_Ns, [new_local_N] * (len(new_subpartition) - 2), i + 1)
                 insert_list(max_local_error,

@@ -212,8 +212,8 @@ def smooth_vf_smooth_path_rp(n=100, N=2, k=4, plot=False, exact=False, n_steps=1
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    solution, error_bound = lo.log_ode_rp(x=x, f_vec=f_vec, y_0=y_0, N=N, partition=partition, method=method, atol=atol,
-                                          rtol=rtol, h=h, norm=norm, p=p)
+    solution, error_bound = lo.log_ode(x=x, f_vec=f_vec, y_0=y_0, N=N, partition=partition, method=method, atol=atol,
+                                       rtol=rtol, h=h, norm=norm, p=p)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
