@@ -43,33 +43,6 @@ def var_path(x, s, t, p, dist, n=15):
     return var(x(np.linspace(s, t, n)).T, p, dist)
 
 
-def variation_greedy(x, p, dist):
-    """
-    Computes the p-variation of the function x.
-    :param x: The path, given as an array of values
-    :param p: The exponent
-    :param dist: The distance function/norm
-    :return: An estimate (lower bound) for the p-variation of x
-    """
-    length = np.shape(x)[0]
-    if p == 1:
-        return np.sum(np.array([dist(x[i], x[i + 1]) for i in range(length - 1)]))
-    if length == 2:
-        return dist(x[0], x[1])
-
-    var_total_interval = dist(x[0], x[-1]) ** p
-    var_initial = np.array([dist(x[0], x[i]) for i in range(1, length - 1)])
-    var_final = np.array([dist(x[i], x[-1]) for i in range(1, length - 1)])
-    var_sum = var_initial ** p + var_final ** p
-    cut = np.argmax(var_sum) + 1
-    var_cut = var_sum[cut - 1]
-
-    if var_total_interval > var_cut:
-        return dist(x[0], x[-1])
-
-    return (variation_greedy(x[:cut + 1], p, dist) ** p + variation_greedy(x[cut:], p, dist) ** p) ** (1 / p)
-
-
 def log_sig(x, n):
     """
     Computes the log-signature of a path x up to level n, and returns a permuted version of that log-signature.
@@ -80,7 +53,7 @@ def log_sig(x, n):
     ls = rp.logsig(x, n)[1:]
     for i in range(n):
         ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
-    return log_sig
+    return ls
 
 
 def vfd(f, y, dx, n, h=1e-05):
@@ -166,11 +139,79 @@ def vector_field(f_vec, ls, h=1e-05, norm=None, norm_estimate=None):
         return vf_norm
 
 
+def log_ode_step_rp(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None):
+    """
+    Implementation of the Log-ODE method.
+    :param x: Driving rough path
+    :param f_vec: Vector field, containing also the derivatives
+    :param y_0: Initial value
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param s: Initial interval point
+    :param t: Final interval point
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
+    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
+        computes an estimate of the p-variation of the underlying
+        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
+        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
+        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
+        as this is more relevant to the problem.
+    :return: Solution on partition points
+    """
+    ls = x.log_incr(s, t, N)[1:]
+    for i in range(N):
+        ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
+
+    if norm is None:
+        vf = lambda t, z: vector_field(f_vec, ls, h)(z)
+        return integrate.solve_ivp(vf, (0, 1), y_0, method=method, atol=atol, rtol=rtol).y[:, -1], [0.], 0.
+
+    norm_estimate = [0.]
+    vf = lambda t, z: vector_field(f_vec, ls, h, norm, norm_estimate)(z)
+    y = integrate.solve_ivp(vf, (0, 1), y_0, method=method, atol=atol, rtol=rtol).y[:, -1]
+    omega = x.omega(s, t)
+    return y, norm_estimate[0], omega
+
+
+def log_ode_rp(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1):
+    """
+    Implementation of the Log-ODE method.
+    :param x: Driving rough path
+    :param f_vec: Vector field, containing also the derivatives
+    :param y_0: Initial value
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
+    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
+        computes an estimate of the p-variation of the underlying
+        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
+        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
+        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
+        as this is more relevant to the problem.
+    :param p: The exponent for which the p-variation of x should be computed.
+        This method is only reasonable if p < N
+    :return: Solution on partition points, error bound (-1 if no norm was specified)
+    """
+    y = np.zeros(shape=(len(y_0), len(partition)))
+    y[:, 0] = y_0
+
+    error_estimate = 0.
+    for i in range(1, len(partition)):
+        y[:, i], vf_norm, omega = log_ode_step_rp(x, f_vec, y[:, i-1], N, partition[i-1], partition[i], method, atol, rtol, h, norm)
+        error_estimate += vf_norm**(N+1) * omega**((N+1)/p)
+    return y, local_log_ode_error_constant(p, N, len(x.incr(partition[0], partition[1], 1)[1])) * error_estimate
+
+
 def log_ode_step(x, f_vec, y_0, deg, s, t, n_steps=100, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1,
                  var_steps=15):
     """
     Implementation of the Log-ODE method.
-    :param x: Driving path given as a function
+    :param x: Driving rough path
     :param f_vec: Vector field, containing also the derivatives
     :param y_0: Initial value
     :param deg: The degree of the Log-ODE method (f needs to be Lip(N))

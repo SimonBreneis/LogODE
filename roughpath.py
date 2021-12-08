@@ -2,15 +2,12 @@ import numpy as np
 import math
 from esig import tosig as ts
 import scipy
+from scipy import special
 import p_var
 
 
 def l1(x):
     return np.sum(np.abs(x))
-
-
-def var(x, p, dist):
-    return p_var.p_var_backbone(np.shape(x)[0], p, lambda a, b: dist(x[a, :], x[b, :])).value ** (1 / p)
 
 
 def beta(p):
@@ -19,11 +16,11 @@ def beta(p):
     :param p: The roughness
     :return: beta
     """
-    if p == 1:
+    if p == 1 or p == 1.:
         return 2 * np.pi ** 2 / 3 - 3
-    if p == 2:
+    if p == 2 or p == 2.:
         return 11.12097
-    if p == 3:
+    if p == 3 or p == 3.:
         return 22.66186
     else:
         return beta(min(3, int(p)))
@@ -49,9 +46,20 @@ def sig_tensor_product(x, y, N=math.inf):
     :param y:
     :return:
     """
+    # np.multiply.outer was empirically faster than np.outer, np.einsum and np.tensordot for dimensions sufficiently
+    # small (say at most 10). For larger dimensions, np.einsum was fastest.
     n = min(len(x), len(y), N+1)
-    res = [np.sum(np.array([np.tensordot(x[j], y[i - j], axes=0) for j in range(i + 1)]), axis=0) for i in range(n)]
-    res[0] = np.array(res[0])
+    if n == 1:
+        return [x[0]*y[0]]
+    if n == 2:
+        return [x[0]*y[0], x[0]*y[1] + x[1]*y[0]]
+    if n == 3:
+        return [x[0]*y[0], x[0]*y[1] + x[1]*y[0], x[0]*y[2] + np.einsum('i,j->ij', x[1], y[1]) + x[2]*y[0]]
+    if n == 4:
+        return [x[0]*y[0], x[0]*y[1] + x[1]*y[0], x[0]*y[2] + np.einsum('i,j->ij', x[1], y[1]) + x[2]*y[0],
+                x[0]*y[3] + np.multiply.outer(x[1], y[2]) + np.multiply.outer(x[2], y[1]) + x[3]*y[0]]
+    # the following code also works for n in {1, 2, 3, 4}, but is considerably slower
+    res = [np.sum(np.array([np.multiply.outer(x[j], y[i - j]) for j in range(i + 1)]), axis=0) for i in range(n)]
     return res
 
 
@@ -147,23 +155,37 @@ class RoughPath:
         """
         return trivial_sig(1, N)
 
+    def log_incr(self, s, t, N):
+        return sig_to_logsig(self.incr(s, t, N))
+
     def p_variation(self, s, t, p, var_steps, norm):
         levels = int(p)
         times = np.linspace(s, t, var_steps+1)
         increments = [self.incr(times[i], times[i+1], levels) for i in range(var_steps)]
         variations = np.zeros(levels)
         for level in range(1, levels+1):
-            def distance(i, j):
-                if j < i:
-                    temp = i
-                    i = j
-                    j = temp
-                elif i == j:
-                    return 0.
-                total_increment = increments[i][:(level+1)]
-                for k in range(i+1, j):
-                    total_increment = sig_tensor_product(total_increment, increments[k][:(level+1)])
-                return norm(total_increment[level])
+            if level == 1:
+                if p == 1 or p == 1.:
+                    return np.sum(np.array([norm(increments[i][1]) for i in range(var_steps)]))
+                # This code also works for p == 1, but is considerably slower
+                values = np.zeros((var_steps+1, len(increments[0][1])))
+                for i in range(var_steps):
+                    values[i+1, :] = values[i, :] + increments[i][1]
+
+                def distance(i, j):
+                    return norm(values[j, :] - values[i, :])
+            else:
+                # This code also works for level == 1, but is considerably slower
+                def distance(i, j):
+                    if j < i:
+                        i, j = j, i
+                    elif i == j:
+                        return 0.
+                    total_increment = increments[i][:(level+1)]
+                    for k in range(i+1, j):
+                        total_increment = sig_tensor_product(total_increment, increments[k][:(level+1)])
+                    return norm(total_increment[level])
+
             variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
         return variations
 
