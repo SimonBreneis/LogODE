@@ -189,7 +189,7 @@ def smooth_vf_smooth_path_rp(n=100, N=2, k=4, plot=False, exact=False, n_steps=1
     logistic = lambda z: 1 / (1 + np.exp(-z))
     partition = np.linspace(0, 1, n + 1)
     path = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
-    x = rp.RoughPathContinuous(path, var_steps=var_steps)
+    x = rp.RoughPathContinuous(path, n_steps=n_steps, var_steps=var_steps)
 
     def f(y, dx):
         return np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)
@@ -223,7 +223,7 @@ def smooth_vf_smooth_path_rp(n=100, N=2, k=4, plot=False, exact=False, n_steps=1
 
 def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
                                      N_vec=np.array([1, 2, 3]), k=4, exact=False,
-                                     n_steps_vec=np.array([1, 2, 3, 10, 32]), method='RK45',
+                                     n_steps_vec=np.array([1, 10, 100, 1000]), method='RK45',
                                      atol=1e-09, rtol=1e-06, h=1e-07, norm=lo.l1, p=1, var_steps=15, show=False,
                                      save=False,
                                      dir='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
@@ -234,7 +234,7 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
     times = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
     true_errors = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
 
-    true_sol, _, _ = smooth_vf_smooth_path_rp(n=4096, N=1, k=k, plot=False, exact=True, n_steps=128, method=method,
+    true_sol, _, _ = smooth_vf_smooth_path_rp(n=4096, N=2, k=k, plot=False, exact=True, n_steps=3000, method=method,
                                            atol=atol,
                                            rtol=rtol, h=h, norm=norm, p=p, var_steps=1)
     plt.plot(true_sol[0, :], true_sol[1, :])

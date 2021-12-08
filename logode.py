@@ -56,20 +56,19 @@ def log_sig(x, n):
     return ls
 
 
-def vfd(f, y, dx, n, h=1e-05):
+def vfd(f_vec, y, dx, h=1e-05):
     """
     Computes the nth derivative of a vector field.
-    :param f: The vector field
+    :param f_vec: The vector field
     :param y: Point at which the derivative is calculated
     :param dx: Direction to which the vector field is applied, an n-tensor
-    :param n: Order of the derivative
     :param h: Step size for the numerical differentiation
     :return: An approximation of the n-th derivative
     """
+    N = len(dx.shape)
+    if N <= len(f_vec):
+        return f_vec[N-1](y, dx)
     x_dim = np.shape(dx)[0]
-
-    if n == 0:
-        return f(y, dx)
     '''
     if n == 1:
         result = 0
@@ -82,9 +81,9 @@ def vfd(f, y, dx, n, h=1e-05):
     for i in range(x_dim):
         vec = np.zeros(x_dim)
         vec[i] = 1.
-        direction = f(y, vec)
-        result += (vfd(f, y + h / 2 * direction, dx[..., i], n - 1, h) - vfd(f, y - h / 2 * direction, dx[..., i],
-                                                                             n - 1, h)) / h
+        direction = f_vec[0](y, vec)
+        result += (vfd(f_vec, y + h / 2 * direction, dx[..., i], h) - vfd(f_vec, y - h / 2 * direction, dx[..., i],
+                                                                             h)) / h
         # result += (f(y + h / 2 * direction) @ x[:, i] - f(y - h / 2 * direction) @ x[:, i]) / h
     return result
 
@@ -110,33 +109,18 @@ def vector_field(f_vec, ls, h=1e-05, norm=None, norm_estimate=None):
     deg = len(ls)
 
     if norm is None:
-        if len(f_vec) >= deg:
-            return lambda y: np.sum(np.array([f_vec[i](y, ls[i]) for i in range(deg)]), axis=0)
-        else:
-            return lambda y: np.sum(np.array([vfd(f_vec[0], y, ls[i], i, h) for i in range(deg)]), axis=0)
+        return lambda y: np.sum(np.array([vfd(f_vec, y, ls[i], h) for i in range(deg)]), axis=0)
 
-    if len(f_vec) >= deg:
-        def vf_norm(y):
-            summands = np.array([f_vec[i](y, ls[i]) for i in range(deg)])
-            vf = np.sum(summands, axis=0)
-            for i in range(deg):
-                norm_ls_i = norm(ls[i])
-                if norm_ls_i > 0:
-                    norm_estimate[0] = np.fmax(norm_estimate[0], (norm(summands[i]) / norm_ls_i) ** (1. / (i + 1)))
-            return vf
+    def vf_norm(y):
+        summands = np.array([vfd(f_vec, y, ls[i], h) for i in range(deg)])
+        vf = np.sum(summands, axis=0)
+        for i in range(deg):
+            norm_ls_i = norm(ls[i])
+            if norm_ls_i > 0:
+                norm_estimate[0] = np.fmax(norm_estimate[0], (norm(summands[i]) / norm_ls_i) ** (1. / (i + 1)))
+        return vf
 
-        return vf_norm
-    else:
-        def vf_norm(y):
-            summands = np.array([vfd(f_vec[0], y, ls[i], i, h) for i in range(deg)])
-            vf = np.sum(summands, axis=0)
-            for i in range(deg):
-                norm_ls_i = norm(ls[i])
-                if norm_ls_i > 0:
-                    norm_estimate[0] = np.fmax(norm_estimate[0], (norm(summands[i]) / norm_ls_i) ** (1. / (i + 1)))
-            return vf
-
-        return vf_norm
+    return vf_norm
 
 
 def log_ode_step_rp(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None):
