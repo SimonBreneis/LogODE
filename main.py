@@ -9,7 +9,7 @@ import logode as lo
 import examples as ex
 import roughpath as rp
 import cProfile
-cProfile.run('ex.smooth_vf_smooth_path_rp(n=102, N=1, k=4, plot=False, exact=True, n_steps=128, norm=rp.l1, var_steps=15)')
+cProfile.run('ex.smooth_vf_smooth_path(n=102, N=1, k=4, plot=False, exact=True, n_steps=128, norm=rp.l1, var_steps=15)')
 print("Hello")
 '''
 k = 4
@@ -42,4 +42,3 @@ time.sleep(3600)
 '''
 
 ex.smooth_vf_smooth_path_discussion(show=True, save=False, rounds=1, exact=True, N_vec=np.array([1, 2, 3]))
-ex.smooth_vf_smooth_path(plot=True, exact=True)
