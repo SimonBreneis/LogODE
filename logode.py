@@ -102,6 +102,29 @@ def log_ode_step(x, f_vec, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05, 
     return y, norm_estimate[0], omega
 
 
+def log_ode_step_vf(x, vf, y_0, N, s, t, method='RK45', atol=1e-09, rtol=1e-05):
+    """
+    Implementation of the Log-ODE method.
+    :param x: Driving rough path
+    :param vf: Vector field
+    :param y_0: Initial value
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param s: Initial interval point
+    :param t: Final interval point
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :return: Solution on partition points
+    """
+    vf.reset_local_norm()
+    ls = x.log_incr(s, t, N)[1:]
+    for i in range(N):
+        ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
+
+    y = integrate.solve_ivp(lambda t, z: vf.vector_field(ls)(z), (0, 1), y_0, method=method, atol=atol, rtol=rtol).y[:, -1]
+    return y, vf.local_norm, x.omega(s, t)
+
+
 def log_ode(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, h=1e-05, norm=None, p=1):
     """
     Implementation of the Log-ODE method.
@@ -131,6 +154,32 @@ def log_ode(x, f_vec, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, 
     for i in range(1, len(partition)):
         y[:, i], vf_norm, omega = log_ode_step(x, f_vec, y[:, i - 1], N, partition[i - 1], partition[i], method,
                                                atol, rtol, h, norm)
+        error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)
+    return y, local_log_ode_error_constant(p, N, len(x.incr(partition[0], partition[1], 1)[1])) * error_estimate
+
+
+def log_ode_vf(x, vf, y_0, N, partition, method='RK45', atol=1e-09, rtol=1e-05, p=1):
+    """
+    Implementation of the Log-ODE method.
+    :param x: Driving rough path
+    :param vf: Vector field
+    :param y_0: Initial value
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param p: The exponent for which the p-variation of x should be computed.
+        This method is only reasonable if p < N
+    :return: Solution on partition points, error bound (-1 if no norm was specified)
+    """
+    y = np.zeros(shape=(len(y_0), len(partition)))
+    y[:, 0] = y_0
+
+    error_estimate = 0.
+    for i in range(1, len(partition)):
+        y[:, i], vf_norm, omega = log_ode_step_vf(x, vf, y[:, i - 1], N, partition[i - 1], partition[i], method,
+                                                  atol, rtol)
         error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)
     return y, local_log_ode_error_constant(p, N, len(x.incr(partition[0], partition[1], 1)[1])) * error_estimate
 

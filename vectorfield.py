@@ -16,8 +16,8 @@ class VectorField:
         :param h:
         :param norm:
         """
-        self.vf = vf.copy
         self.exact_der = len(vf)
+        self.vf = [vf[i] for i in range(self.exact_der)]
         self.h = h
         self.norm = norm
         self.global_norm = 0.

@@ -7,6 +7,7 @@ import p_var
 import time
 import logode as lo
 import roughpath as rp
+import vectorfield as vf
 
 
 def log_linear_regression(x, y):
@@ -221,6 +222,69 @@ def smooth_vf_smooth_path_rp(n=100, N=2, k=4, plot=False, exact=False, n_steps=1
     return solution, error_bound, toc - tic
 
 
+def smooth_vf_smooth_path_rp_vf(n=100, N=2, k=4, plot=False, exact=False, n_steps=100, method='RK45', atol=1e-09, rtol=1e-06,
+                          h=1e-07, norm=None, p=1, var_steps=15):
+    """
+    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
+    k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param k: Number of times the path revolves around the origin
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param exact: If true, uses as input both the vector field and its first derivative. If false, uses as input only
+        the vector field.
+    :param n_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
+    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
+        computes an estimate of the p-variation of the underlying
+        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
+        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
+        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
+        as this is more relevant to the problem.
+    :param p: The exponent for which the p-variation of x should be computed.
+        This method is only reasonable if p < N
+    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
+        may be more inaccurate.
+    :return: The entire path, an error bound, and the time
+    """
+    logistic = lambda z: 1 / (1 + np.exp(-z))
+    partition = np.linspace(0, 1, n + 1)
+    path = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
+    x = rp.RoughPathContinuous(path, n_steps=n_steps, var_steps=var_steps)
+
+    def f(y, dx):
+        return np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)
+
+    def df(y, dx):
+        return (dx[0, 0] * np.array([logistic(y[1]) + y[0] - y[1], logistic(y[1]) ** 2 * (1 - logistic(y[1]))])
+                + dx[0, 1] * np.array(
+                    [y[1] + logistic(y[0] - 2 * y[1]),
+                     logistic(y[1]) * (1 - logistic(y[1])) * logistic(y[0] - 2 * y[1])])
+                + dx[1, 0] * np.array([-logistic(y[1]), logistic(y[0] - 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
+                        y[1] - y[0] - 2 * logistic(y[1]))])
+                + dx[1, 1] * np.array([-logistic(y[0] - 2 * y[1]),
+                                       logistic(y[0] + 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
+                                               -y[1] - 2 * logistic(y[0] - 2 * y[1]))]))
+
+    if exact:
+        vec_field = vf.VectorField([f, df], h=h, norm=norm)
+    else:
+        vec_field = vf.VectorField([f], h=h, norm=norm)
+
+    y_0 = np.array([0., 0.])
+    tic = time.perf_counter()
+    solution, error_bound = lo.log_ode_vf(x=x, vf=vec_field, y_0=y_0, N=N, partition=partition, method=method, atol=atol,
+                                       rtol=rtol, p=p)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    return solution, error_bound, toc - tic
+
+
 def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
                                      N_vec=np.array([1, 2, 3]), k=4, exact=False,
                                      n_steps_vec=np.array([1, 10, 100, 1000]), method='RK45',
@@ -234,7 +298,7 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
     times = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
     true_errors = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
 
-    true_sol, _, _ = smooth_vf_smooth_path_rp(n=4096, N=2, k=k, plot=False, exact=True, n_steps=3000, method=method,
+    true_sol, _, _ = smooth_vf_smooth_path_rp_vf(n=4096, N=2, k=k, plot=False, exact=True, n_steps=3000, method=method,
                                            atol=atol,
                                            rtol=rtol, h=h, norm=norm, p=p, var_steps=1)
     plt.plot(true_sol[0, :], true_sol[1, :])

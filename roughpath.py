@@ -159,6 +159,8 @@ class RoughPath:
         return sig_to_logsig(self.incr(s, t, N))
 
     def p_variation(self, s, t, p, var_steps, norm):
+        if norm is None:
+            return 0.
         levels = int(p)
         times = np.linspace(s, t, var_steps+1)
         increments = [self.incr(times[i], times[i+1], levels) for i in range(var_steps)]
