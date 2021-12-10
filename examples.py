@@ -96,7 +96,7 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, kind, regre
 
 
 def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100, method='RK45', atol=1e-09, rtol=1e-06,
-                          h=1e-07, norm=None, p=1, var_steps=15):
+                          h=1e-07, norm=None, var_steps=15):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -117,8 +117,6 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
         signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
         sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
         as this is more relevant to the problem.
-    :param p: The exponent for which the p-variation of x should be computed.
-        This method is only reasonable if p < N
     :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
         may be more inaccurate.
     :return: The entire path, an error bound, and the time
@@ -143,14 +141,15 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
                                                -y[1] - 2 * logistic(y[0] - 2 * y[1]))]))
 
     if exact:
-        vec_field = vf.VectorField([f, df], h=h, norm=norm)
+        vec_field = vf.VectorFieldNumeric([f, df], h=h)
     else:
-        vec_field = vf.VectorField([f], h=h, norm=norm)
+        vec_field = vf.VectorFieldNumeric([f], h=h)
 
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    # solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    solution, error_bound = solver.solve_adaptive(T=1., atol=1e-03, rtol=1e-02)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])

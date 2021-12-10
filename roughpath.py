@@ -12,18 +12,18 @@ def l1(x):
 
 def beta(p):
     """
-    Computes beta = p * (1 + sum_{r=2}^infinity (2/r)^((p+1)/p)).
+    Computes beta = p * (1 + sum_{r=2}^infinity (2/r)^(([p]+1)/p)).
     :param p: The roughness
     :return: beta
     """
-    if p == 1 or p == 1.:
+    if p == 1:
         return 2 * np.pi ** 2 / 3 - 3
-    if p == 2 or p == 2.:
+    if p == 2:
         return 11.12097
-    if p == 3 or p == 3.:
+    if p == 3:
         return 22.66186
     else:
-        return beta(min(3, int(p)))
+        return 2*p*(int(p)+1)/(int(p)+1-p)  # upper bound
 
 
 def trivial_sig(dim, N):

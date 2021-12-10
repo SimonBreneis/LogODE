@@ -9,6 +9,34 @@ import logode as lo
 import examples as ex
 import roughpath as rp
 import cProfile
+
+import sympy as sp
+x = sp.symbols('x')
+a = sp.Integral(sp.cos(x)*sp.exp(x), x)
+print(sp.Eq(a, a.doit()))
+
+y, z = sp.symbols('y z')
+logistic = 1/(1 + sp.exp(-x))
+print(logistic.evalf(subs={x: 1}))
+f = sp.Array([[z-y, -z], [logistic.subs(x, z), logistic.subs(x, y-2*z)]])
+print(f.subs([(y, 1), (z, sp.Rational(3, 10))]))
+highest_der = f
+base_func = f
+vars = sp.Array([y, z])
+der_highest_der = sp.Array([sp.diff(highest_der, vars[i]) for i in range(len(vars))])
+permutations = [*range(3)]
+permutations[0] = 1
+permutations[1] = 0
+next_order = sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)), permutations)
+print(next_order.rank())
+a, b, c, d = sp.symbols('a b c d')
+dx = sp.Array([[a, b], [c, d]])
+print(sp.tensorcontraction(sp.tensorcontraction(sp.tensorproduct(next_order, dx), (1, 3)), (1, 2)))
+time.sleep(3600)
+
+ex.smooth_vf_smooth_path(exact=False)
+time.sleep(3600)
+
 cProfile.run('ex.smooth_vf_smooth_path(n=102, N=1, k=4, plot=False, exact=True, n_steps=128, norm=rp.l1, var_steps=15)')
 print("Hello")
 '''

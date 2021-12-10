@@ -39,6 +39,10 @@ class LogODESolver:
         for i in range(N):
             ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
 
+        for i in range(N):
+            total_norm = rp.l1(ls[i])
+            ls[i] = ls[i] * (ls[i] > 1e-08*total_norm)
+
         y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls)(z), (0, 1), y_s, method=self.method,
                                 atol=atol, rtol=rtol).y[:, -1]
         return y, self.f.local_norm, self.x.omega(s, t)
@@ -70,44 +74,48 @@ class LogODESolver:
         if p == 1:
             return 0.34 * (7 / 3.) ** (N + 1)
         if p == 2:
-            return 25 * self.dim / scipy.special.gamma((N + 3) / 2.) + 0.081 * (7 / 3) ** (N + 1)
-        return 1000 * self.dim ** 3 / scipy.special.gamma((N + 4) / 3.) + 0.038 * (7 / 3) ** (N + 1)
+            return 25 * self.dim / scipy.special.gamma((N + 1) / p + 1) + 0.081 * (7 / 3) ** (N + 1)
+        return 1000 * self.dim ** 3 / scipy.special.gamma((N + 1) / p + 1) + 0.038 * (7 / 3) ** (N + 1)
 
-    def solve_adaptive(self, T, atol=1., rtol=1.):
+    def solve_adaptive(self, T, atol=1e-03, rtol=1e-02):
         """
         Implementation of the Log-ODE method.
         :return: Solution on partition points
         """
-        eps = atol
-        n_steps = self.x.n_steps
         var_steps = self.x.var_steps
         p = self.x.p
         p = int(p)
         norm_estimates = np.zeros(10)
-        self.x.n_steps = max(n_steps, 100)
+        self.x.var_steps = max(var_steps, 100)
         _, norm_estimates[0], omega_estimate = self.solve_step(self.y_0, s=0, t=T, N=p, atol=10*atol, rtol=10*rtol)
         _, norm_estimates[1], _ = self.solve_step(self.y_0, s=0, t=T, N=p+1, atol=10*atol, rtol=10*rtol)
         _, norm_estimates[2], _ = self.solve_step(self.y_0, s=0, t=T, N=p+2, atol=10*atol, rtol=10*rtol)
-        self.x.n_steps = n_steps
-        norm_incr = max(norm_estimates[2] - norm_estimates[1], norm_estimates[1] - norm_estimates[0])
-        norm_estimates[3:] = norm_estimates[2] + norm_incr * np.arange(1, 8)
+        _, norm_estimates[3], _ = self.solve_step(self.y_0, s=0, t=T, N=p+3, atol=10*atol, rtol=10*rtol)
+        self.x.var_steps = var_steps
+        if norm_estimates[3] == 0: norm_estimates[3] = max(norm_estimates[0], norm_estimates[1], norm_estimates[2])
+        if norm_estimates[3] == 0: norm_estimates[3] = 1.
+        if norm_estimates[2] == 0: norm_estimates[2] = norm_estimates[3]
+        if norm_estimates[1] == 0: norm_estimates[1] = norm_estimates[2]
+        if norm_estimates[0] == 0: norm_estimates[0] = norm_estimates[1]
+        norm_incr = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1], norm_estimates[1] - norm_estimates[0])
+        norm_estimates[4:] = norm_estimates[3] + norm_incr * np.arange(1, 7)
         print(f"Norm estimates: {norm_estimates}")
         print(f"Error constants: {np.array([self.local_log_ode_error_constant(N) for N in range(p, p + 10)])}")
         print(f"Omega: {omega_estimate}")
         number_intervals = np.array([(self.local_log_ode_error_constant(N) * norm_estimates[N - p] ** (
-                N + 1) * omega_estimate ** ((N + 1.) / p) / eps) ** (p / (N - p + 1)) for N in range(p, p + 10)])
+                N + 1) * omega_estimate ** ((N + 1.) / p) / atol) ** (p / (N - p + 1)) for N in range(p, p + 10)])
         print(f"Number of intervals: {number_intervals}")
         complexity = np.array([self.dim ** N for N in range(p, p + 10)]) * number_intervals
         N = np.argmin(complexity) + p
         print(f"N = {N}")
-        number_intervals = (number_intervals[N - p] / 10) ** (2. / (1 + p))
+        number_intervals = number_intervals[N - p]
         print("Let us find a partition!")
         partition = self.find_partition(s=0, t=T, total_omega=omega_estimate, n=number_intervals)
         print("We found a partition!")
-        atol = atol/len(partition)
-        rtol = rtol/len(partition)
+        atol = atol
+        rtol = rtol
         local_Ns = [N] * (len(partition) - 1)
-        max_local_error = [eps / number_intervals] * (len(partition) - 1)
+        max_local_error = [atol / len(partition)] * (len(partition) - 1)
         y = [self.y_0]
 
         i = 0
@@ -115,7 +123,7 @@ class LogODESolver:
             print(f"At index {i + 1} of {len(partition) - 1}")
             local_N = local_Ns[i]
             y_next, norm_est, omega_est = self.solve_step(y_s=y[i], s=partition[i], t=partition[i + 1], N=local_N,
-                                                          atol=atol, rtol=rtol)
+                                                          atol=max_local_error[i]/2, rtol=rtol/atol*max_local_error[i]/2)
             print(f"Norm estimate: {norm_est}, Omega estimate: {omega_est}")
             error_est = self.local_log_ode_error_constant(local_N) * norm_est ** (local_N + 1) * omega_est ** (
                     (local_N + 1.) / p)
@@ -180,7 +188,6 @@ class LogODESolver:
     def find_partition(self, s, t, total_omega, n, q=2.):
         """
         Finds a partition of the interval [0,T] such that omega(0,T)/(qn) <= omega(s,t) <= q*omega(0,T)/n.
-        :param x: The path
         :param s: Initial time
         :param t: Final time
         :param total_omega: Estimate for the total control function of x on [0,T]
