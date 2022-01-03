@@ -96,8 +96,8 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, kind, regre
         plt.savefig(dir + '/' + kind + ', ' + filename, format='pdf')
 
 
-def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100, method='RK45', atol=1e-09, rtol=1e-06,
-                          h=1e-07, norm=None, var_steps=15, symbolic_path=False, symbolic_vf=False):
+def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, second_der=False, n_steps=100, method='RK45', atol=1e-09,
+                          rtol=1e-06, h=1e-07, norm=rp.l1, p=1, var_steps=15, symbolic_path=False, symbolic_vf=False):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -105,40 +105,43 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
     :param N: Degree of the Log-ODE method
     :param k: Number of times the path revolves around the origin
     :param plot: If true, plots the entire path. If false, does not plot anything
-    :param exact: If true, uses as input both the vector field and its first derivative. If false, uses as input only
-        the vector field.
+    :param second_der: If true, uses as input both the vector field and its first derivative. If false, uses as input
+        only the vector field. Only relevant if symbolic_vf=False
     :param n_steps: Number of (equidistant) steps used in the approximation of the signature of x
     :param method: A method for solving initial value problems implemented in the scipy.integrate library
     :param atol: Absolute error tolerance of the ODE solver
     :param rtol: Relative error tolerance of the ODE solver
-    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given)
+    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given, and
+        symbolic_vf=False)
     :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
-        computes an estimate of the p-variation of the underlying
-        path x. Note that this is an estimate of the p-variation only for x itself, not for its higher-order
-        signature terms. Also, it is not an actual estimate of the p-variation, but rather an estimate of the sum
-        sum_{i in partition} |x|_{p, [t_i, t_{i+1}]}^deg,
-        as this is more relevant to the problem.
+        computes an estimate of the p-variation of the underlying path x.
+    :param p: Roughness of the path
     :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
-        may be more inaccurate.
+        may be more inaccurate
+    :param symbolic_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param symbolic_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
     :return: The entire path, an error bound, and the time
     """
-    logistic = lambda z: 1 / (1 + np.exp(-z))
-    partition = np.linspace(0, 1, n + 1)
     if symbolic_path:
+        k = sp.Integer(k)
         t = sp.symbols('t')
-        path = sp.Array([sp.cos(8 * sp.pi * t) * sp.Rational(1, 2), sp.sin(8 * sp.pi * t) * sp.Rational(1, 2)])
-        x = rp.RoughPathSymbolic(path, t)
+        path = sp.Array([sp.cos(2 * k * sp.pi * t) / sp.sqrt(k), sp.sin(2 * k * sp.pi * t) / sp.sqrt(k)])
+        x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps,norm=norm)
     else:
         path = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
-        x = rp.RoughPathContinuous(path, n_steps=n_steps, var_steps=var_steps)
+        x = rp.RoughPathContinuous(path=path, n_steps=n_steps, p=p, var_steps=var_steps, norm=norm)
 
     if symbolic_vf:
         a, y, z = sp.symbols('a y z')
         logistic = 1 / (1 + sp.exp(-a))
         f = sp.Array([[z - y, -z], [logistic.subs(a, z), logistic.subs(a, y - 2 * z)]])
         variables = sp.Array([y, z])
-        vec_field = vf.VectorFieldSymbolic([f], variables=variables)
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
     else:
+        logistic = lambda z: 1 / (1 + np.exp(-z))
+
         def f(y, dx):
             return np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)
 
@@ -153,16 +156,15 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
                                            logistic(y[0] + 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
                                                    -y[1] - 2 * logistic(y[0] - 2 * y[1]))]))
 
-        if exact:
-            vec_field = vf.VectorFieldNumeric([f, df], h=h)
+        if second_der:
+            vec_field = vf.VectorFieldNumeric(f=[f, df], h=h, norm=norm)
         else:
-            vec_field = vf.VectorFieldNumeric([f], h=h)
+            vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
-    # solution, error_bound = solver.solve_adaptive(T=1., atol=1e-03, rtol=1e-02)
+    solution, error_bound = solver.solve_fixed(N=N, partition=np.linspace(0, 1, n + 1), atol=atol, rtol=rtol)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -171,21 +173,59 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
 
 
 def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
-                                     N_vec=np.array([1, 2, 3]), k=4, exact=False,
+                                     N_vec=np.array([1, 2, 3]), k=4, second_der=False,
                                      n_steps_vec=np.array([1, 10, 100, 1000]), method='RK45',
                                      atol=1e-09, rtol=1e-06, h=1e-07, norm=rp.l1, p=1, var_steps=15, show=False,
                                      save=False,
-                                     dir='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
-                                     rounds=10, adaptive_tol=False):
+                                     directory='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
+                                     rounds=1, adaptive_tol=False, symbolic_path=False, symbolic_vf=False):
+    """
+    Discusses the problem in smooth_vf_smooth_path.
+    :param n_vec: Number of intervals
+    :param N_vec: Degree of the Log-ODE method
+    :param k: Number of times the path revolves around the origin
+    :param second_der: If true, uses as input both the vector field and its first derivative. If false, uses as input
+        only the vector field. Only relevant if symbolic_vf=False
+    :param n_steps_vec: Number of (equidistant) steps used in the approximation of the signature of x
+    :param method: A method for solving initial value problems implemented in the scipy.integrate library
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param h: Step size for numerical differentiation (if the derivatives of the vector field are not given, and
+        symbolic_vf=False)
+    :param norm: If a norm is specified, computes a local (directional) estimate of the Lipschitz norm of f. Also
+        computes an estimate of the p-variation of the underlying path x.
+    :param p: Roughness of the path
+    :param var_steps: Number of steps used when computing the p-variation of x. Lower var_steps leads to a speed-up, but
+        may be more inaccurate
+    :param show: Shows all the plots that are made
+    :param save: Saves all the plots that are made
+    :param directory: Directory where the plots are saved (if save is True)
+    :param rounds: Number of times each problem is solved (to get a better estimate of the run time)
+    :param adaptive_tol: If true, takes into account that the error tolerance of the ODE solver must scale with the
+        number of intervals used. Uses this to try to eliminate the error from the ODE solver
+    :param symbolic_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param symbolic_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
     kind = 'smooth vector field, smooth pathqq'
     solutions = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec), 2))
     error_bounds = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
     times = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
     true_errors = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
 
-    true_sol, _, _ = smooth_vf_smooth_path(n=4096, N=2, k=k, plot=False, exact=True, n_steps=3000, method=method,
-                                           atol=atol,
-                                           rtol=rtol, h=h, norm=norm, var_steps=1)
+    n = 8*np.amax(n_vec)
+    N = 2
+    if adaptive_tol:
+        atol_ = atol * n ** (-N / float(p))
+        rtol_ = rtol * n ** (-N / float(p))
+    else:
+        atol_ = atol
+        rtol_ = rtol
+    true_sol, _, _ = smooth_vf_smooth_path(n=n, N=N, k=k, plot=False, method=method, atol=atol_, rtol=rtol_, h=h,
+                                           norm=norm, p=p, var_steps=1, symbolic_path=symbolic_path,
+                                           symbolic_vf=symbolic_vf)
     plt.plot(true_sol[0, :], true_sol[1, :])
     plt.title('Solution for ' + kind)
     plt.show()
@@ -203,7 +243,7 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
             for l in range(len(n_steps_vec)):
                 print(f"N = {N_vec[i]}, n = {n_vec[j]}, n_steps = {n_steps_vec[l]}")
                 for _ in range(rounds):
-                    sol, err, tim = smooth_vf_smooth_path(n=n_vec[j], N=N_vec[i], k=k, plot=False, exact=exact,
+                    sol, err, tim = smooth_vf_smooth_path(n=n_vec[j], N=N_vec[i], k=k, plot=False, second_der=second_der,
                                                           n_steps=n_steps_vec[l], method=method, atol=atol_, rtol=rtol_,
                                                           h=h,
                                                           norm=norm, p=p, var_steps=var_steps)
@@ -214,15 +254,15 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
                 times[i, j, l] /= rounds
 
             comparison_plot(N_vec[i], n_vec[j], n_steps_vec, true_errors[i, j, :], error_bounds[i, j, :],
-                            times[i, j, :], kind, True, show, save, dir, adaptive_tol, atol, rtol, h)
+                            times[i, j, :], kind, True, show, save, directory, adaptive_tol, atol, rtol, h)
 
         for l in range(len(n_steps_vec)):
             comparison_plot(N_vec[i], n_vec, n_steps_vec[l], true_errors[i, :, l], error_bounds[i, :, l],
-                            times[i, :, l], kind, True, show, save, dir, adaptive_tol, atol, rtol, h)
+                            times[i, :, l], kind, True, show, save, directory, adaptive_tol, atol, rtol, h)
     for j in range(len(n_vec)):
         for l in range(len(n_steps_vec)):
             comparison_plot(N_vec, n_vec[j], n_steps_vec[l], true_errors[:, j, l], error_bounds[:, j, l],
-                            times[:, j, l], kind, True, show, save, dir, adaptive_tol, atol, rtol, h)
+                            times[:, j, l], kind, True, show, save, directory, adaptive_tol, atol, rtol, h)
 
     times_flat = times.flatten()
     permutation = times_flat.argsort()
@@ -262,16 +302,3 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
     plt.ylabel('Error')
     plt.legend(loc='best')
     plt.show()
-
-
-'''
-# Solving dx_t = x_t dt, x_0=1, on [0,2] with level 2 log-ODE method and 50 equisized subintervals
-k = 4
-x = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
-f_vec = [
-    lambda y, dx: np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)]
-y_0 = np.array([0., 0.])
-partition, solution = lo.log_ode_user(x, f_vec, y_0, 1., norm=lo.l1, p=1)
-plt.plot(solution[:, 0], solution[:, 1])
-plt.show()
-'''
