@@ -38,11 +38,11 @@ class LogODESolver:
         ls = self.x.log_incr(s, t, N)[1:]
         for i in range(N):
             ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
-
+        '''
         for i in range(N):
             total_norm = rp.l1(ls[i])
-            ls[i] = ls[i] * (ls[i] > 1e-08*total_norm)
-
+            ls[i] = ls[i] * (np.abs(ls[i]) > 1e-08*total_norm)
+        '''
         y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls)(z), (0, 1), y_s, method=self.method,
                                 atol=atol, rtol=rtol).y[:, -1]
         return y, self.f.local_norm, self.x.omega(s, t)
@@ -60,7 +60,9 @@ class LogODESolver:
 
         error_estimate = 0.
         for i in range(1, len(partition)):
+            print(f'Step {i} of {len(partition)}')
             y[:, i], vf_norm, omega = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol)
+            vf_norm = np.amax(np.array(vf_norm)[:N])
             error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)
         return y, self.local_log_ode_error_constant(N) * error_estimate
 

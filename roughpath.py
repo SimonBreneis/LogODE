@@ -4,6 +4,7 @@ from esig import tosig as ts
 import scipy
 from scipy import special
 import p_var
+import sympy as sp
 
 
 def l1(x):
@@ -38,6 +39,20 @@ def trivial_sig(dim, N):
     return result
 
 
+def copy_tensor(x, N=math.inf):
+    n = min(len(x), N+1)
+    return [x[0], *[x[i].copy() for i in range(1, n)]]
+
+
+def scalar_mult(x, alpha):
+    return [alpha*x[i] for i in range(len(x))]
+
+
+def tensor_addition(x, y, N=math.inf):
+    n = min(len(x), len(y), N + 1)
+    return [x[i] + y[i] for i in range(n)]
+
+
 def sig_tensor_product(x, y, N=math.inf):
     """
     Computes the tensor product of the two signatures x and y up to level N.
@@ -61,6 +76,28 @@ def sig_tensor_product(x, y, N=math.inf):
     # the following code also works for n in {1, 2, 3, 4}, but is considerably slower
     res = [np.sum(np.array([np.multiply.outer(x[j], y[i - j]) for j in range(i + 1)]), axis=0) for i in range(n)]
     return res
+
+
+def inverse(x, N=math.inf):
+    if N == math.inf:
+        N = len(x)-1
+    if N == 0:
+        return [1./x[0]]
+    if N == 1:
+        return [1./x[0], -x[1]/x[0]**2]
+
+    x = copy_tensor(x, N)
+    x_0 = x[0]
+    x[0] = 0.
+    x = scalar_mult(x, -1./x_0)
+
+    product = copy_tensor(x)
+    result = copy_tensor(x)
+    result[0] = 1.
+    for i in range(2, N+1):
+        product = sig_tensor_product(product, x)
+        result = tensor_addition(result, product)
+    return scalar_mult(result, 1./x_0)
 
 
 def sig(x, N):
@@ -316,3 +353,27 @@ class RoughPathExact(RoughPath):
         for i in range(1, self.n_steps):
             result = sig_tensor_product(result, extend_sig(self.path(times[i], times[i+1]), N))
         return result
+
+
+class RoughPathSymbolic(RoughPath):
+    def __init__(self, path, t, p=1, var_steps=15, norm=l1):
+        super().__init__(p, var_steps, norm)
+        self.path = [sp.Integer(1), path - path.subs(t, sp.Integer(0))]
+        self.t = t  # sympy time variable by which path is parametrised
+        self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
+
+    def new_level(self):
+        nl = sp.tensorproduct(self.path[-1], self.derivatives).applyfunc(lambda x: sp.integrate(x, self.t))
+        self.path.append(nl - nl.subs(self.t, sp.Integer(0)))
+
+    def eval_path(self, t, N):
+        res = [np.array(self.path[i].subs(self.t, t)).astype(np.float64) for i in range(N+1)]
+        res[0] = 1.
+        return res
+
+    def incr(self, s, t, N):
+        while N > len(self.path) - 1:
+            self.new_level()
+        x_s = self.eval_path(s, N)
+        x_t = self.eval_path(t, N)
+        return sig_tensor_product(inverse(x_s), x_t)

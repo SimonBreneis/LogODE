@@ -4,26 +4,35 @@ import sympy as sp
 
 
 class VectorField:
-    def __init__(self, vf, norm=rp.l1):
+    def __init__(self, f, norm=rp.l1):
         """
         .
-        :param vf: List, first element is the vector field. Further elements may be the derivatives of the vector field,
-            if the derivatives are not specified (i.e. if f_vec is a list of length smaller than deg), the derivatives
+        :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
+            if the derivatives are not specified (i.e. if f is a list of length smaller than deg), the derivatives
             are computed numerically
-            If the derivatives are specified, then f_vec[i] is the ith derivative (i=0, ..., deg-1), and f_vec[i] takes
+            If the derivatives are specified, then f[i] is the ith derivative (i=0, ..., deg-1), and f[i] takes
             as input the position vector y and the (i+1)-tensor dx^(i+1)
-            If the derivatives are not specified, then f_vec[0] is the vector field, given as a matrix-valued function
+            If the derivatives are not specified, then f[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
         :param norm:
         """
-        self.exact_der = len(vf)
-        self.vf = [vf[i] for i in range(self.exact_der)]
+        self.exact_der = len(f)
+        self.f = [f[i] for i in range(self.exact_der)]
         self.norm = norm
-        self.global_norm = 0.
-        self.local_norm = 0.
+        self.global_norm = [0.]  # the ith entry is a (lower) estimate of the norm \|f^{\circ i}\|_\infty
+        self.local_norm = [0.]
 
     def reset_local_norm(self):
-        self.local_norm = 0.
+        self.local_norm = [0.]*len(self.local_norm)
+
+    def derivative(self, y, dx):
+        """
+        Computes the derivative of the vector field.
+        :param y: Point at which the derivative is calculated
+        :param dx: Direction to which the vector field is applied, an n-tensor
+        :return: An approximation of the n-th derivative
+        """
+        return None
 
     def vector_field(self, ls):
         """
@@ -31,14 +40,32 @@ class VectorField:
         :param ls: The log-signature of the driving path up to level deg
         :return: Solution on partition points
         """
-        return None
+        deg = len(ls)
+
+        if self.norm is None:
+            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(deg)]), axis=0)
+
+        def compute_vf_and_norm(y):
+            while deg > len(self.local_norm):
+                self.local_norm.append(0.)
+                self.global_norm.append(0.)
+            ls_norms = np.array([self.norm(ls[i]) for i in range(deg)])
+            summands = np.array([self.derivative(y, ls[i]) for i in range(deg)])
+            vf = np.sum(summands, axis=0)
+            for i in range(deg):
+                local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
+                self.local_norm[i] = np.fmax(self.local_norm[i], local_local_norm)
+                self.global_norm[i] = np.fmax(self.global_norm[i], local_local_norm)
+            return vf
+
+        return compute_vf_and_norm
 
 
 class VectorFieldNumeric(VectorField):
-    def __init__(self, vf, h=1e-06, norm=rp.l1):
+    def __init__(self, f, h=1e-06, norm=rp.l1):
         """
         .
-        :param vf: List, first element is the vector field. Further elements may be the derivatives of the vector field,
+        :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
             if the derivatives are not specified (i.e. if f_vec is a list of length smaller than deg), the derivatives
             are computed numerically
             If the derivatives are specified, then f_vec[i] is the ith derivative (i=0, ..., deg-1), and f_vec[i] takes
@@ -48,7 +75,7 @@ class VectorFieldNumeric(VectorField):
         :param h:
         :param norm:
         """
-        super().__init__(vf, norm)
+        super().__init__(f, norm)
         self.h = h
 
     def derivative(self, y, dx):
@@ -60,53 +87,23 @@ class VectorFieldNumeric(VectorField):
         """
         N = len(dx.shape)
         if N <= self.exact_der:
-            return self.vf[N - 1](y, dx)
+            return self.f[N - 1](y, dx)
         x_dim = np.shape(dx)[0]
         result = 0
         for i in range(x_dim):
             vec = np.zeros(x_dim)
             vec[i] = 1.
-            direction = self.vf[0](y, vec)
+            direction = self.f[0](y, vec)
             result += (self.derivative(y + self.h / 2 * direction, dx[..., i])
                        - self.derivative(y - self.h / 2 * direction, dx[..., i])) / self.h
         return result
 
-    def vector_field(self, ls):
-        """
-        Computes the vector field used in the Log-ODE method.
-        :param ls: The log-signature of the driving path up to level deg
-        :return: Solution on partition points
-        """
-        deg = len(ls)
-
-        if self.norm is None:
-            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(deg)]), axis=0)
-
-        def vf_norm(y):
-            ls_norms = np.array([self.norm(ls[i]) for i in range(deg)])
-            total_ls_norm = np.sum(ls_norms)
-            summands = np.array([self.derivative(y, ls[i]) for i in range(deg)])
-            vf = np.sum(summands, axis=0)
-            for i in range(deg):
-                if ls_norms[i] > 1e-05*total_ls_norm:
-                    local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
-                    if local_local_norm > 1e+3:
-                        print(len(ls))
-                        print(i)
-                        print(ls)
-                        print(ls[i])
-                    self.local_norm = np.fmax(self.local_norm, local_local_norm)
-                    self.global_norm = np.fmax(self.global_norm, local_local_norm)
-            return vf
-
-        return vf_norm
-
 
 class VectorFieldSymbolic(VectorField):
-    def __init__(self, vf, norm=rp.l1, variables=None):
+    def __init__(self, f, norm=rp.l1, variables=None):
         """
         .
-        :param vf: List, first element is the vector field. Further elements may be the derivatives of the vector field,
+        :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
             if the derivatives are not specified (i.e. if f_vec is a list of length smaller than deg), the derivatives
             are computed numerically
             If the derivatives are specified, then f_vec[i] is the ith derivative (i=0, ..., deg-1), and f_vec[i] takes
@@ -115,7 +112,7 @@ class VectorFieldSymbolic(VectorField):
             that takes as input only the position vector y
         :param norm:
         """
-        super().__init__(vf, norm)
+        super().__init__(f, norm)
         self.variables = variables
 
     def new_derivative(self):
@@ -123,21 +120,21 @@ class VectorFieldSymbolic(VectorField):
         Computes the next derivative that has not yet been calculated.
         :return:
         """
-        highest_der = self.vf[-1]
-        base_func = self.vf[0]
+        highest_der = self.f[-1]
+        base_func = self.f[0]
         der_highest_der = sp.Array([sp.diff(highest_der, self.variables[i]) for i in range(len(self.variables))])
         permutations = [*range(der_highest_der.rank())]
         permutations[0] = 1
         permutations[1] = 0
-        next_order = sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2), permutations)
-        self.vf.append(next_order)
+        next_order = sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)), permutations)
+        self.f.append(next_order)
         return None
 
     def derivative(self, y, dx):
         rank = len(dx.shape)
-        vec_field = self.vf[rank-1]
+        vec_field = self.f[rank - 1]
         eval_vec_field = sp.lambdify(self.variables, vec_field, modules='numpy')
-        eval_vec_field = eval_vec_field(y)
+        eval_vec_field = eval_vec_field(*list(y))
         return np.tensordot(eval_vec_field, dx, axes=rank)
 
     def vector_field(self, ls):
@@ -147,27 +144,7 @@ class VectorFieldSymbolic(VectorField):
         :return: Solution on partition points
         """
         deg = len(ls)
-        while len(self.vf) < deg:
+        while len(self.f) < deg:
             self.new_derivative()
 
-        if self.norm is None:
-            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(deg)]), axis=0)
-
-        def vf_norm(y):
-            ls_norms = np.array([self.norm(ls[i]) for i in range(deg)])
-            total_ls_norm = np.sum(ls_norms)
-            summands = np.array([self.derivative(y, ls[i]) for i in range(deg)])
-            vf = np.sum(summands, axis=0)
-            for i in range(deg):
-                if ls_norms[i] > 1e-05 * total_ls_norm:
-                    local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
-                    if local_local_norm > 1e+3:
-                        print(len(ls))
-                        print(i)
-                        print(ls)
-                        print(ls[i])
-                    self.local_norm = np.fmax(self.local_norm, local_local_norm)
-                    self.global_norm = np.fmax(self.global_norm, local_local_norm)
-            return vf
-
-        return vf_norm
+        return super().vector_field(ls)

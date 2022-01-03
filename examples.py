@@ -6,6 +6,7 @@ from scipy import stats
 import logode as lo
 import roughpath as rp
 import vectorfield as vf
+import sympy as sp
 
 
 def log_linear_regression(x, y):
@@ -96,7 +97,7 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, kind, regre
 
 
 def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100, method='RK45', atol=1e-09, rtol=1e-06,
-                          h=1e-07, norm=None, var_steps=15):
+                          h=1e-07, norm=None, var_steps=15, symbolic_path=False, symbolic_vf=False):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -123,33 +124,45 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, exact=False, n_steps=100,
     """
     logistic = lambda z: 1 / (1 + np.exp(-z))
     partition = np.linspace(0, 1, n + 1)
-    path = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
-    x = rp.RoughPathContinuous(path, n_steps=n_steps, var_steps=var_steps)
-
-    def f(y, dx):
-        return np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)
-
-    def df(y, dx):
-        return (dx[0, 0] * np.array([logistic(y[1]) + y[0] - y[1], logistic(y[1]) ** 2 * (1 - logistic(y[1]))])
-                + dx[0, 1] * np.array(
-                    [y[1] + logistic(y[0] - 2 * y[1]),
-                     logistic(y[1]) * (1 - logistic(y[1])) * logistic(y[0] - 2 * y[1])])
-                + dx[1, 0] * np.array([-logistic(y[1]), logistic(y[0] - 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
-                        y[1] - y[0] - 2 * logistic(y[1]))])
-                + dx[1, 1] * np.array([-logistic(y[0] - 2 * y[1]),
-                                       logistic(y[0] + 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
-                                               -y[1] - 2 * logistic(y[0] - 2 * y[1]))]))
-
-    if exact:
-        vec_field = vf.VectorFieldNumeric([f, df], h=h)
+    if symbolic_path:
+        t = sp.symbols('t')
+        path = sp.Array([sp.cos(8 * sp.pi * t) * sp.Rational(1, 2), sp.sin(8 * sp.pi * t) * sp.Rational(1, 2)])
+        x = rp.RoughPathSymbolic(path, t)
     else:
-        vec_field = vf.VectorFieldNumeric([f], h=h)
+        path = lambda t: np.array([np.cos(2 * np.pi * k * t), np.sin(2 * np.pi * k * t)]) / np.sqrt(k)
+        x = rp.RoughPathContinuous(path, n_steps=n_steps, var_steps=var_steps)
+
+    if symbolic_vf:
+        a, y, z = sp.symbols('a y z')
+        logistic = 1 / (1 + sp.exp(-a))
+        f = sp.Array([[z - y, -z], [logistic.subs(a, z), logistic.subs(a, y - 2 * z)]])
+        variables = sp.Array([y, z])
+        vec_field = vf.VectorFieldSymbolic([f], variables=variables)
+    else:
+        def f(y, dx):
+            return np.einsum('ij,j', np.array([[y[1] - y[0], -y[1]], [logistic(y[1]), logistic(y[0] - 2 * y[1])]]), dx)
+
+        def df(y, dx):
+            return (dx[0, 0] * np.array([logistic(y[1]) + y[0] - y[1], logistic(y[1]) ** 2 * (1 - logistic(y[1]))])
+                    + dx[0, 1] * np.array(
+                        [y[1] + logistic(y[0] - 2 * y[1]),
+                         logistic(y[1]) * (1 - logistic(y[1])) * logistic(y[0] - 2 * y[1])])
+                    + dx[1, 0] * np.array([-logistic(y[1]), logistic(y[0] - 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
+                            y[1] - y[0] - 2 * logistic(y[1]))])
+                    + dx[1, 1] * np.array([-logistic(y[0] - 2 * y[1]),
+                                           logistic(y[0] + 2 * y[1]) * (1 - logistic(y[0] - 2 * y[1])) * (
+                                                   -y[1] - 2 * logistic(y[0] - 2 * y[1]))]))
+
+        if exact:
+            vec_field = vf.VectorFieldNumeric([f, df], h=h)
+        else:
+            vec_field = vf.VectorFieldNumeric([f], h=h)
 
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    # solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
-    solution, error_bound = solver.solve_adaptive(T=1., atol=1e-03, rtol=1e-02)
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    # solution, error_bound = solver.solve_adaptive(T=1., atol=1e-03, rtol=1e-02)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -172,7 +185,7 @@ def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150])
 
     true_sol, _, _ = smooth_vf_smooth_path(n=4096, N=2, k=k, plot=False, exact=True, n_steps=3000, method=method,
                                            atol=atol,
-                                           rtol=rtol, h=h, norm=norm, p=p, var_steps=1)
+                                           rtol=rtol, h=h, norm=norm, var_steps=1)
     plt.plot(true_sol[0, :], true_sol[1, :])
     plt.title('Solution for ' + kind)
     plt.show()
