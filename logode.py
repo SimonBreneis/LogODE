@@ -3,6 +3,7 @@ import scipy
 from scipy import integrate, special
 import roughpath as rp
 import vectorfield as vf
+import tensoralgebra as ta
 
 
 def insert_list(master, insertion, index):
@@ -23,7 +24,7 @@ class LogODESolver:
         self.f = f
         self.y_0 = y_0
         self.method = method
-        self.dim = len(self.x.incr(0., 0., 1)[1])
+        self.dim = self.x.incr(0., 0., 1).dim()
 
     def solve_step(self, y_s, s, t, N, atol, rtol):
         """
@@ -35,14 +36,9 @@ class LogODESolver:
         :return: Solution on partition points
         """
         self.f.reset_local_norm()
-        ls = self.x.log_incr(s, t, N)[1:]
-        for i in range(N):
-            ls[i] = np.transpose(ls[i], [i + 1 - j for j in range(1, i + 2)])
-        '''
-        for i in range(N):
-            total_norm = rp.l1(ls[i])
-            ls[i] = ls[i] * (np.abs(ls[i]) > 1e-08*total_norm)
-        '''
+        ls = self.x.log_incr(s, t, N)
+        for i in range(1, N+1):
+            ls[i] = np.transpose(ls[i], [i - 1 - j for j in range(i)])
         y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls)(z), (0, 1), y_s, method=self.method,
                                 atol=atol, rtol=rtol).y[:, -1]
         return y, self.f.local_norm, self.x.omega(s, t)

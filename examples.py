@@ -7,6 +7,7 @@ import logode as lo
 import roughpath as rp
 import vectorfield as vf
 import sympy as sp
+import tensoralgebra as ta
 
 
 def log_linear_regression(x, y):
@@ -97,7 +98,7 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, kind, regre
 
 
 def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, second_der=False, n_steps=100, method='RK45', atol=1e-09,
-                          rtol=1e-06, h=1e-07, norm=rp.l1, p=1, var_steps=15, symbolic_path=False, symbolic_vf=False):
+                          rtol=1e-06, h=1e-07, norm=ta.l1, p=1, var_steps=15, symbolic_path=False, symbolic_vf=False):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -175,7 +176,7 @@ def smooth_vf_smooth_path(n=100, N=2, k=4, plot=False, second_der=False, n_steps
 def smooth_vf_smooth_path_discussion(n_vec=np.array([100, 215, 464, 1000, 2150]),
                                      N_vec=np.array([1, 2, 3]), k=4, second_der=False,
                                      n_steps_vec=np.array([1, 10, 100, 1000]), method='RK45',
-                                     atol=1e-09, rtol=1e-06, h=1e-07, norm=rp.l1, p=1, var_steps=15, show=False,
+                                     atol=1e-09, rtol=1e-06, h=1e-07, norm=ta.l1, p=1, var_steps=15, show=False,
                                      save=False,
                                      directory='C:/Users/breneis/Desktop/Backup 09112021/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots',
                                      rounds=1, adaptive_tol=False, symbolic_path=False, symbolic_vf=False):

@@ -5,10 +5,7 @@ import scipy
 from scipy import special
 import p_var
 import sympy as sp
-
-
-def l1(x):
-    return np.sum(np.abs(x))
+import tensoralgebra as ta
 
 
 def beta(p):
@@ -177,7 +174,7 @@ def extend_sig(s, N):
 
 
 class RoughPath:
-    def __init__(self, p=1, var_steps=15, norm=l1):
+    def __init__(self, p=1, var_steps=15, norm=ta.l1):
         self.p = p
         self.var_steps = var_steps
         self.norm = norm
@@ -190,10 +187,10 @@ class RoughPath:
         :param N:
         :return:
         """
-        return trivial_sig(1, N)
+        return ta.trivial_tens_num(1, N)
 
     def log_incr(self, s, t, N):
-        return sig_to_logsig(self.incr(s, t, N))
+        return self.incr(s, t, N).log()
 
     def p_variation(self, s, t, p, var_steps, norm):
         if norm is None:
@@ -205,9 +202,9 @@ class RoughPath:
         for level in range(1, levels+1):
             if level == 1:
                 if p == 1 or p == 1.:
-                    return np.sum(np.array([norm(increments[i][1]) for i in range(var_steps)]))
+                    return np.sum(np.array([increments[i].norm(1, norm) for i in range(var_steps)]))
                 # This code also works for p == 1, but is considerably slower
-                values = np.zeros((var_steps+1, len(increments[0][1])))
+                values = np.zeros((var_steps+1, increments[0].dim()))
                 for i in range(var_steps):
                     values[i+1, :] = values[i, :] + increments[i][1]
 
@@ -222,8 +219,8 @@ class RoughPath:
                         return 0.
                     total_increment = increments[i][:(level+1)]
                     for k in range(i+1, j):
-                        total_increment = sig_tensor_product(total_increment, increments[k][:(level+1)])
-                    return norm(total_increment[level])
+                        total_increment = total_increment * increments[k][:(level+1)]
+                    return total_increment.norm(level, norm)
 
             variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
         return variations
@@ -242,7 +239,7 @@ class RoughPath:
 
 
 class RoughPathDiscrete(RoughPath):
-    def __init__(self, times, values, p=1., var_steps=15, norm=l1, save_level=0):
+    def __init__(self, times, values, p=1., var_steps=15, norm=ta.l1, save_level=0):
         super().__init__(p, var_steps, norm)
         self.times = times
         self.val = values
@@ -255,22 +252,22 @@ class RoughPathDiscrete(RoughPath):
             n_intervals[0] = length
             for i in range(n_discr_levels - 1):
                 n_intervals[i + 1] = int(n_intervals[i] / 2.)
-            self.sig = [[trivial_sig(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
+            self.sig = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
                         range(n_discr_levels)]
             for j in range(n_intervals[0]):
-                self.sig[0][j] = sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
+                self.sig[0][j] = ta.sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
             for i in range(1, len(self.sig)):
                 for j in range(n_intervals[i]):
-                    self.sig[i][j] = sig_tensor_product(self.sig[i - 1][2 * j], self.sig[i - 1][2 * j + 1], save_level)
+                    self.sig[i][j] = self.sig[i - 1][2 * j] * self.sig[i - 1][2 * j + 1]
 
     def get_sig(self, i, j, N):
         if N <= self.save_level:
             return self.sig[i][j][:(N+1)]
-        return extend_sig(self.sig[i][j], N)
+        return self.sig[i][j].extend_sig(N)
 
     def incr_canonical(self, s_ind, t_ind, N):
         if s_ind == t_ind:
-            return trivial_sig(self.val.shape[1], N)
+            return ta.trivial_sig_num(self.val.shape[1], N)
         diff = t_ind - s_ind
         approx_level = int(np.log2(diff))
         # at this stage, we can be sure that there is a dyadic interval between s_ind and t_ind of length
@@ -281,7 +278,7 @@ class RoughPathDiscrete(RoughPath):
         # length approx_diff, it must be either [0, approx_diff] (if s_ind_==0), or [approx_diff, 2*approx_diff].
         if s_ind_ == 0:
             inner = self.get_sig(approx_level, int(s_ind / approx_diff), N)
-            left = trivial_sig(self.val.shape[1], N)
+            left = ta.trivial_sig_num(self.val.shape[1], N)
             right = self.incr_canonical(s_ind + approx_diff, t_ind, N)
         else:
             # the interval can then only be [approx_diff, 2*approx_diff] if s_ind_ + diff >= 2*approx_diff.
@@ -295,8 +292,7 @@ class RoughPathDiscrete(RoughPath):
                 inner = self.get_sig(approx_level - 1, int(s_ind / approx_diff * 2) + 1, N)
                 left = self.incr_canonical(s_ind, int(int(s_ind / approx_diff * 2 + 1) * (approx_diff / 2)), N)
                 right = self.incr_canonical(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
-        li = sig_tensor_product(left, inner, N)
-        return sig_tensor_product(li, right, N)
+        return left * inner * right
 
     def incr(self, s, t, N):
         s_ind = sum(map(lambda x: x < s, self.times))
@@ -310,33 +306,32 @@ class RoughPathDiscrete(RoughPath):
             x_t = self.val[t_ind, :] + (self.val[t_ind + 1, :] - self.val[t_ind, :]) * (t - self.times[t_ind]) / (
                     self.times[t_ind + 1] - self.times[t_ind])
         if s_ind > t_ind:
-            result = sig(np.array([x_s, x_t]), N)
+            result = ta.sig(np.array([x_s, x_t]), N)
         elif s_ind == t_ind:
-            result = sig(np.array([x_s, self.val[s_ind, :], x_t]), N)
+            result = ta.sig(np.array([x_s, self.val[s_ind, :], x_t]), N)
         else:  # (s_ind < t_ind)
-            left = sig(np.array([x_s, self.val[s_ind, :]]), N)
-            right = sig(np.array([self.val[t_ind, :], x_t]), N)
+            left = ta.sig(np.array([x_s, self.val[s_ind, :]]), N)
+            right = ta.sig(np.array([self.val[t_ind, :], x_t]), N)
             if self.save_level > 0:
                 inner = self.incr_canonical(s_ind, t_ind, N)
             else:
                 inner = sig(self.val[s_ind:(t_ind + 1), :], N)
-            li = sig_tensor_product(left, inner, N)
-            result = sig_tensor_product(li, right, N)
+            result = left * inner * right
         return result
 
 
 class RoughPathContinuous(RoughPath):
-    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
+    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=ta.l1):
         super().__init__(p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
 
     def incr(self, s, t, N):
-        return sig(self.path(np.linspace(s, t, self.n_steps + 1)).T, N)
+        return ta.sig(self.path(np.linspace(s, t, self.n_steps + 1)).T, N)
 
 
 class RoughPathExact(RoughPath):
-    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=l1):
+    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=ta.l1):
         super().__init__(p, var_steps, norm)
         self.path = path
         self.n_steps = n_steps
@@ -347,18 +342,18 @@ class RoughPathExact(RoughPath):
         if N <= exact_degree:
             return result
         if self.n_steps == 1:
-            return extend_sig(result, N)
+            return result.extend_sig(N)
         times = np.linspace(s, t, self.n_steps + 1)
-        result = extend_sig(self.path(s, times[1]), N)
+        result = self.path(s, times[1]).extend_sig(N)
         for i in range(1, self.n_steps):
-            result = sig_tensor_product(result, extend_sig(self.path(times[i], times[i+1]), N))
+            result = result * self.path(times[i], times[i+1]).extend_sig(N)
         return result
 
 
 class RoughPathSymbolic(RoughPath):
-    def __init__(self, path, t, p=1, var_steps=15, norm=l1):
+    def __init__(self, path, t, p=1, var_steps=15, norm=ta.l1):
         super().__init__(p, var_steps, norm)
-        self.path = [sp.Integer(1), path - path.subs(t, sp.Integer(0))]
+        self.path = ta.SymbolicalTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
         self.t = t  # sympy time variable by which path is parametrised
         self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
 
@@ -367,7 +362,7 @@ class RoughPathSymbolic(RoughPath):
         self.path.append(nl - nl.subs(self.t, sp.Integer(0)))
 
     def eval_path(self, t, N):
-        res = [np.array(self.path[i].subs(self.t, t)).astype(np.float64) for i in range(N+1)]
+        res = ta.NumericalTensor([np.array(self.path[i].subs(self.t, t)).astype(np.float64) for i in range(N+1)])
         res[0] = 1.
         return res
 
@@ -376,4 +371,4 @@ class RoughPathSymbolic(RoughPath):
             self.new_level()
         x_s = self.eval_path(s, N)
         x_t = self.eval_path(t, N)
-        return sig_tensor_product(inverse(x_s), x_t)
+        return x_s.inverse() * x_t

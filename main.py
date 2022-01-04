@@ -11,9 +11,10 @@ import roughpath as rp
 import vectorfield as vf
 import cProfile
 import sympy as sp
+import tensoralgebra as ta
 
 
-ex.smooth_vf_smooth_path(second_der=False, plot=True, N=2, n=300, symbolic_path=True, symbolic_vf=True)
+ex.smooth_vf_smooth_path(second_der=False, plot=True, N=2, n=300, symbolic_path=False, symbolic_vf=True)
 time.sleep(3600)
 
 '''

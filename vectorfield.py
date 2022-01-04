@@ -1,10 +1,11 @@
 import numpy as np
 import roughpath as rp
 import sympy as sp
+import tensoralgebra as ta
 
 
 class VectorField:
-    def __init__(self, f, norm=rp.l1):
+    def __init__(self, f, norm=ta.l1):
         """
         .
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -40,17 +41,17 @@ class VectorField:
         :param ls: The log-signature of the driving path up to level deg
         :return: Solution on partition points
         """
-        deg = len(ls)
+        deg = ls.n_levels()
 
         if self.norm is None:
-            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(deg)]), axis=0)
+            return lambda y: np.sum(np.array([self.derivative(y, ls[i+1]) for i in range(deg)]), axis=0)
 
         def compute_vf_and_norm(y):
             while deg > len(self.local_norm):
                 self.local_norm.append(0.)
                 self.global_norm.append(0.)
-            ls_norms = np.array([self.norm(ls[i]) for i in range(deg)])
-            summands = np.array([self.derivative(y, ls[i]) for i in range(deg)])
+            ls_norms = np.array([ls.norm(i+1, self.norm) for i in range(deg)])
+            summands = np.array([self.derivative(y, ls[i+1]) for i in range(deg)])
             vf = np.sum(summands, axis=0)
             for i in range(deg):
                 local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
@@ -62,7 +63,7 @@ class VectorField:
 
 
 class VectorFieldNumeric(VectorField):
-    def __init__(self, f, h=1e-06, norm=rp.l1):
+    def __init__(self, f, h=1e-06, norm=ta.l1):
         """
         .
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -100,7 +101,7 @@ class VectorFieldNumeric(VectorField):
 
 
 class VectorFieldSymbolic(VectorField):
-    def __init__(self, f, norm=rp.l1, variables=None):
+    def __init__(self, f, norm=ta.l1, variables=None):
         """
         .
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -143,7 +144,7 @@ class VectorFieldSymbolic(VectorField):
         :param ls: The log-signature of the driving path up to level deg
         :return: Solution on partition points
         """
-        deg = len(ls)
+        deg = ls.n_levels()
         while len(self.f) < deg:
             self.new_derivative()
 

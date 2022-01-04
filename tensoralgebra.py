@@ -5,10 +5,6 @@ from esig import tosig as ts
 import matplotlib.pyplot as plt
 import p_var
 import time
-import logode as lo
-import examples as ex
-import roughpath as rp
-import vectorfield as vf
 import cProfile
 import sympy as sp
 
@@ -33,6 +29,15 @@ class Tensor:
     def __len__(self):
         return len(self.tensor)
 
+    def __str__(self):
+        return self.tensor.__str__()
+
+    def __getitem__(self, item):
+        return self.tensor[item]
+
+    def __setitem__(self, key, value):
+        self.tensor[key] = value
+
     def n_levels(self):
         return len(self) - 1
 
@@ -55,7 +60,7 @@ class Tensor:
         result = self * (-1 / self.tensor[0])
         result.tensor[0] = 1
         if N >= 2:
-            factor = result.__copy()
+            factor = result.__copy__()
             factor.tensor[0] = 0
             product = factor.__copy__()
 
@@ -63,7 +68,7 @@ class Tensor:
                 product = product * factor
                 result = result + product
 
-        return result / self.tensor[0]
+        return result * (1/self.tensor[0])
 
     def exp(self):
         """
@@ -89,13 +94,25 @@ class Tensor:
         curr_tensor_prod = factor
         for k in range(2, len(self)):
             curr_tensor_prod = curr_tensor_prod * factor
-            result = result + curr_tensor_prod / k * (-1)**(k+1)
+            result = result + curr_tensor_prod * ((-1)**(k+1) / k)
         return result
 
     def extend_sig(self, N):
         if N <= self.n_levels():
             return self.project(N)
         return self.log().project(N).exp()
+
+    def norm(self, N, norm=l1):
+        return norm(self.tensor[N])
+
+    def level(self, N):
+        return self.tensor[N]
+
+    def append(self, tensor_level):
+        self.tensor.append(tensor_level)
+
+    def set_level(self, N, tensor_level):
+        self.tensor[N] = tensor_level
 
 
 class SymbolicalTensor(Tensor):
