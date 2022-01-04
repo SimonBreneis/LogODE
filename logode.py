@@ -1,20 +1,17 @@
 import time
-
 import numpy as np
 import scipy
 from scipy import integrate, special
 import roughpath as rp
-import vectorfield as vf
-import tensoralgebra as ta
 
 
 def insert_list(master, insertion, index):
     """
     Inserts the list insertion to the list master starting at index.
-    :param master:
-    :param insertion:
-    :param index:
-    :return:
+    :param master: List that is being modified
+    :param insertion: List that is being inserted
+    :param index: Index where the list insertion is being inserted
+    :return: Nothing
     """
     for i in range(len(insertion)):
         master.insert(index + i, insertion[i])
@@ -22,11 +19,18 @@ def insert_list(master, insertion, index):
 
 class LogODESolver:
     def __init__(self, x, f, y_0, method='RK45'):
+        """
+        Initialization.
+        :param x: Driving rough path, instance of RoughPath
+        :param f: Vector field, instance of VectorField
+        :param y_0: Initial condition, instance of numpy.ndarray
+        :param method: Method used in the ODE solver (see scipy.integrate.ivp)
+        """
         self.x = x
         self.f = f
         self.y_0 = y_0
         self.method = method
-        self.dim = self.x.incr(0., 0., 1).dim()
+        self.dim = self.x.incr(0., 0., 1).dim()  # Dimension of the underlying rough path x
 
     def solve_step(self, y_s, s, t, N, atol, rtol):
         """
@@ -35,11 +39,13 @@ class LogODESolver:
         :param y_s: Current solution value
         :param s: Initial interval point
         :param t: Final interval point
+        :param atol: Absolute error tolerance of the ODE solver
+        :param rtol: Relative error tolerance of the ODE solver
         :return: Solution on partition points
         """
         self.f.reset_local_norm()
         ls = self.x.log_incr(s, t, N)
-        for i in range(1, N+1):
+        for i in range(1, N + 1):
             ls[i] = np.transpose(ls[i], [i - 1 - j for j in range(i)])
         y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls)(z), (0, 1), y_s, method=self.method,
                                 atol=atol, rtol=rtol).y[:, -1]
@@ -50,6 +56,8 @@ class LogODESolver:
         Implementation of the Log-ODE method.
         :param N: The degree of the Log-ODE method (f needs to be Lip(N))
         :param partition: Partition of the interval on which we apply the Log-ODE method
+        :param atol: Absolute error tolerance of the ODE solver
+        :param rtol: Relative error tolerance of the ODE solver
         :return: Solution on partition points, error bound (-1 if no norm was specified)
         """
         y = np.zeros(shape=(len(self.y_0), len(partition)))
@@ -62,7 +70,8 @@ class LogODESolver:
         for i in range(1, len(partition)):
             toc = time.perf_counter()
             if toc - last_time > 10:
-                print(f'{100*(i-1)/len(partition):.2f}% complete, estimated {int((toc-tic)/(i-1)*(len(partition)-i))}s remaining.')
+                print(
+                    f'{100 * (i - 1) / len(partition):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
                 last_time = toc
             y[:, i], vf_norm, omega = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol)
             vf_norm = np.amax(np.array(vf_norm)[:N])
@@ -76,15 +85,32 @@ class LogODESolver:
         :return: The constant
         """
         p = self.x.p
+        '''
         if p == 1:
             return 0.34 * (7 / 3.) ** (N + 1)
         if p == 2:
             return 25 * self.dim / scipy.special.gamma((N + 1) / p + 1) + 0.081 * (7 / 3) ** (N + 1)
-        return 1000 * self.dim ** 3 / scipy.special.gamma((N + 1) / p + 1) + 0.038 * (7 / 3) ** (N + 1)
+        if p == 3:
+            return 1000 * self.dim ** 3 / scipy.special.gamma((N + 1) / p + 1) + 0.038 * (7 / 3) ** (N + 1)
+        '''
+        if 1 <= p < 2:
+            C = 1
+        elif 2 <= p < 3:
+            C = 3 * np.sqrt(self.dim)
+        elif 3 <= p < 4:
+            C = 7 * self.dim
+        else:
+            C = 21 * self.dim ** (9 / 4)
+        beta = rp.beta(p)
+        return (1.13 / beta) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(
+            int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
     def solve_adaptive(self, T, atol=1e-03, rtol=1e-02):
         """
         Implementation of the Log-ODE method.
+        :param T: Final time
+        :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
+        :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
         :return: Solution on partition points
         """
         var_steps = self.x.var_steps
@@ -92,17 +118,18 @@ class LogODESolver:
         p = int(p)
         norm_estimates = np.zeros(10)
         self.x.var_steps = max(var_steps, 100)
-        _, norm_estimates[0], omega_estimate = self.solve_step(self.y_0, s=0, t=T, N=p, atol=10*atol, rtol=10*rtol)
-        _, norm_estimates[1], _ = self.solve_step(self.y_0, s=0, t=T, N=p+1, atol=10*atol, rtol=10*rtol)
-        _, norm_estimates[2], _ = self.solve_step(self.y_0, s=0, t=T, N=p+2, atol=10*atol, rtol=10*rtol)
-        _, norm_estimates[3], _ = self.solve_step(self.y_0, s=0, t=T, N=p+3, atol=10*atol, rtol=10*rtol)
+        _, norm_estimates[0], omega_estimate = self.solve_step(self.y_0, s=0, t=T, N=p, atol=10 * atol, rtol=10 * rtol)
+        _, norm_estimates[1], _ = self.solve_step(self.y_0, s=0, t=T, N=p + 1, atol=10 * atol, rtol=10 * rtol)
+        _, norm_estimates[2], _ = self.solve_step(self.y_0, s=0, t=T, N=p + 2, atol=10 * atol, rtol=10 * rtol)
+        _, norm_estimates[3], _ = self.solve_step(self.y_0, s=0, t=T, N=p + 3, atol=10 * atol, rtol=10 * rtol)
         self.x.var_steps = var_steps
         if norm_estimates[3] == 0: norm_estimates[3] = max(norm_estimates[0], norm_estimates[1], norm_estimates[2])
         if norm_estimates[3] == 0: norm_estimates[3] = 1.
         if norm_estimates[2] == 0: norm_estimates[2] = norm_estimates[3]
         if norm_estimates[1] == 0: norm_estimates[1] = norm_estimates[2]
         if norm_estimates[0] == 0: norm_estimates[0] = norm_estimates[1]
-        norm_incr = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1], norm_estimates[1] - norm_estimates[0])
+        norm_incr = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1],
+                        norm_estimates[1] - norm_estimates[0])
         norm_estimates[4:] = norm_estimates[3] + norm_incr * np.arange(1, 7)
         print(f"Norm estimates: {norm_estimates}")
         print(f"Error constants: {np.array([self.local_log_ode_error_constant(N) for N in range(p, p + 10)])}")
@@ -128,7 +155,8 @@ class LogODESolver:
             print(f"At index {i + 1} of {len(partition) - 1}")
             local_N = local_Ns[i]
             y_next, norm_est, omega_est = self.solve_step(y_s=y[i], s=partition[i], t=partition[i + 1], N=local_N,
-                                                          atol=max_local_error[i]/2, rtol=rtol/atol*max_local_error[i]/2)
+                                                          atol=max_local_error[i] / 2,
+                                                          rtol=rtol / atol * max_local_error[i] / 2)
             print(f"Norm estimate: {norm_est}, Omega estimate: {omega_est}")
             error_est = self.local_log_ode_error_constant(local_N) * norm_est ** (local_N + 1) * omega_est ** (
                     (local_N + 1.) / p)

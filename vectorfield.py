@@ -1,5 +1,4 @@
 import numpy as np
-import roughpath as rp
 import sympy as sp
 import tensoralgebra as ta
 
@@ -7,15 +6,15 @@ import tensoralgebra as ta
 class VectorField:
     def __init__(self, f, norm=ta.l1):
         """
-        .
+        Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
             if the derivatives are not specified (i.e. if f is a list of length smaller than deg), the derivatives
-            are computed numerically
+            are computed numerically or symbolically
             If the derivatives are specified, then f[i] is the ith derivative (i=0, ..., deg-1), and f[i] takes
             as input the position vector y and the (i+1)-tensor dx^(i+1)
             If the derivatives are not specified, then f[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
-        :param norm:
+        :param norm: Vector space norm used for estimating the norm of f
         """
         self.exact_der = len(f)
         self.f = [f[i] for i in range(self.exact_der)]
@@ -24,6 +23,10 @@ class VectorField:
         self.local_norm = [0.]
 
     def reset_local_norm(self):
+        """
+        Resets the values of self.local_norm to zero.
+        :return: Nothing
+        """
         self.local_norm = [0.]*len(self.local_norm)
 
     def derivative(self, y, dx):
@@ -67,7 +70,7 @@ class VectorField:
 class VectorFieldNumeric(VectorField):
     def __init__(self, f, h=1e-06, norm=ta.l1):
         """
-        .
+        Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
             if the derivatives are not specified (i.e. if f_vec is a list of length smaller than deg), the derivatives
             are computed numerically
@@ -75,8 +78,8 @@ class VectorFieldNumeric(VectorField):
             as input the position vector y and the (i+1)-tensor dx^(i+1)
             If the derivatives are not specified, then f_vec[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
-        :param h:
-        :param norm:
+        :param h: Step size in numerical differentiation
+        :param norm: Vector space norm used for estimating the norm of f
         """
         super().__init__(f, norm)
         self.h = h
@@ -105,15 +108,16 @@ class VectorFieldNumeric(VectorField):
 class VectorFieldSymbolic(VectorField):
     def __init__(self, f, norm=ta.l1, variables=None):
         """
-        .
+        Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
             if the derivatives are not specified (i.e. if f_vec is a list of length smaller than deg), the derivatives
-            are computed numerically
+            are computed symbolically
             If the derivatives are specified, then f_vec[i] is the ith derivative (i=0, ..., deg-1), and f_vec[i] takes
             as input the position vector y and the (i+1)-tensor dx^(i+1)
             If the derivatives are not specified, then f_vec[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
-        :param norm:
+        :param norm: Vector space norm used for estimating the norm of f
+        :param variables: The sympy variables with respect to which f is defined
         """
         super().__init__(f, norm)
         self.variables = variables
@@ -121,7 +125,7 @@ class VectorFieldSymbolic(VectorField):
     def new_derivative(self):
         """
         Computes the next derivative that has not yet been calculated.
-        :return:
+        :return: Nothing
         """
         highest_der = self.f[-1]
         base_func = self.f[0]
@@ -129,10 +133,17 @@ class VectorFieldSymbolic(VectorField):
         permutations = [*range(der_highest_der.rank())]
         permutations[0] = 1
         permutations[1] = 0
-        self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)), permutations))
+        self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)),
+                                     permutations))
         return None
 
     def derivative(self, y, dx):
+        """
+        Computes the len(dx.shape)-th term in the log-ODE method.
+        :param y: The current position of the approximated solution
+        :param dx: A level of the log-signature of the underlying path
+        :return: The len(dx.shape)-th term in the log-ODE method
+        """
         rank = len(dx.shape)
         return np.tensordot(sp.lambdify(self.variables, self.f[rank - 1], modules='numpy')(*list(y)), dx, axes=rank)
 

@@ -12,8 +12,20 @@ import fbm
 
 
 def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.l1, save_level=0):
+    """
+    Returns a sample path of fractional Brownian motion as an instance of a RoughPath.
+    :param H: Hurst parameter
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param p: Parameter in which the roughness should be measured (default choice 1/H + 0.05)
+    :param var_steps: Number of steps used in approximating p-variation
+    :param norm: Norm for computing p-variation
+    :param save_level: Level up to which the signatures on the time grid are stored
+    :return: An instance of a RoughPathDiscrete
+    """
     if p == 0.:
-        p = 1/H + 0.1
+        p = 1/H + 0.05
     if save_level == 0:
         save_level = np.ceil(p)
     f = fbm.FBM(n=n, hurst=H, length=T)
@@ -23,12 +35,38 @@ def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.
 
 
 def log_linear_regression(x, y):
+    """
+    Applies log-linear regression of y against x.
+    :param x: The argument
+    :param y: The function value
+    :return: Exponent, constant, R-value, p-value, empirical standard deviation
+    """
     slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(np.log(x), np.log(y))
     return slope, np.exp(intercept), r_value, p_value, std_err
 
 
 def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, description, regression=True, show=False,
-                    save=False, dir=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
+                    save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
+    """
+    Constructs many plots for the discussion of the examples.
+    :param N: The level(s) of the log-ODE method
+    :param n: The number(s) of intervals of the log-ODE method
+    :param n_steps: The number(s) of steps used in the approximation of the signatures
+    :param true_errors: The errors of the log-ODE approximations
+    :param error_bounds: The error bounds of the log-ODE approximations
+    :param times: The run-times of applying the log-ODE approximations
+    :param description: Description of the example that is being discussed
+    :param regression: If True, apply log-log-regression and also plot the result
+    :param show: If True, shows all the plots when they are constructed
+    :param save: If True, saves all the plots (as PDF files) in directory
+    :param directory: Folder where the plots are saved (if save is True)
+    :param adaptive_tol: Were the error tolerances of the ODE solvers chosen adaptively?
+    :param atol: (Base) absolute error tolerance of the ODE solver
+    :param rtol: (Base) relative error tolerance of the ODE solver
+    :param sym_vf: Were symbolic vector fields used?
+    :param sym_path: Were symbolic rough paths used?
+    :return: Nothing
+    """
     description = description[0].upper() + description[1:]
     title = ''
     if adaptive_tol:
@@ -114,7 +152,7 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, description
     if show:
         plt.show()
     if save:
-        plt.savefig(dir + '/' + description + ', ' + filename, format='pdf')
+        plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
 
 
 def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
@@ -200,7 +238,7 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
     partition = np.linspace(0, 1, n + 1)
     h = 1e-07
 
-    path = lambda s, t: ta.NumericalTensor([1., np.array([0., 0.]), np.array([[0., t-s], [s-t, 0.]])])
+    path = lambda s, t: ta.NumericTensor([1., np.array([0., 0.]), np.array([[0., t - s], [s - t, 0.]])])
     x = rp.RoughPathExact(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
