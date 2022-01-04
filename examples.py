@@ -8,6 +8,18 @@ import roughpath as rp
 import vectorfield as vf
 import sympy as sp
 import tensoralgebra as ta
+import fbm
+
+
+def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.l1, save_level=0):
+    if p == 0.:
+        p = 1/H + 0.1
+    if save_level == 0:
+        save_level = np.ceil(p)
+    f = fbm.FBM(n=n, hurst=H, length=T)
+    times = fbm.times(n=n, length=T)
+    values = np.array([f.fbm() for _ in range(dim)]).T
+    return rp.RoughPathDiscrete(times=times, values=values, p=p, var_steps=var_steps, norm=norm, save_level=save_level)
 
 
 def log_linear_regression(x, y):
@@ -164,7 +176,176 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     return solution, error_bound, toc - tic
 
 
-def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False):
+def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=None):
+    """
+    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is pure area. The driving path
+    is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param param: Deprecated parameter
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
+    p = 2
+    var_steps = 15
+    norm = ta.l1
+    method = 'RK45'
+    partition = np.linspace(0, 1, n + 1)
+    h = 1e-07
+
+    path = lambda s, t: ta.NumericalTensor([1., np.array([0., 0.]), np.array([[0., t-s], [s-t, 0.]])])
+    x = rp.RoughPathExact(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+
+    if sym_vf:
+        a, y, z = sp.symbols('a y z')
+        logistic = 1 / (1 + sp.exp(-a))
+        f = sp.Array([[z - y, -z], [logistic.subs(a, z), logistic.subs(a, y - 2 * z)]])
+        variables = sp.Array([y, z])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+    else:
+        logistic = lambda z: 1 / (1 + np.exp(-z))
+
+        def f(y, dx):
+            return np.array([(y[1]-y[0])*dx[0] - y[1]*dx[1], logistic(y[1])*dx[0] + logistic(y[0]-2*y[1])*dx[1]])
+
+        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
+
+    y_0 = np.array([0., 0.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
+    tic = time.perf_counter()
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    return solution, error_bound, toc - tic
+
+
+def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
+    """
+    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
+    motion. The driving path is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param param: Either Hurst parameter of the driving path, or a fBm given as a rough path
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
+
+    var_steps = 15
+    norm = ta.l1
+    method = 'RK45'
+    partition = np.linspace(0, 1, n + 1)
+    h = 1e-07
+
+    if isinstance(param, rp.RoughPath):
+        x = param
+        p = x.p
+    else:
+        p = 1 / param + 0.1
+        x = rough_fractional_Brownian_path(H=param, n=n*sig_steps, dim=2, T=1., p=p, var_steps=var_steps, norm=norm,
+                                           save_level=N)
+
+    if sym_vf:
+        a, y, z = sp.symbols('a y z')
+        logistic = 1 / (1 + sp.exp(-a))
+        f = sp.Array([[z - y, -z], [logistic.subs(a, z), logistic.subs(a, y - 2 * z)]])
+        variables = sp.Array([y, z])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+    else:
+        logistic = lambda z: 1 / (1 + np.exp(-z))
+
+        def f(y, dx):
+            return np.array([(y[1]-y[0])*dx[0] - y[1]*dx[1], logistic(y[1])*dx[0] + logistic(y[0]-2*y[1])*dx[1]])
+
+        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
+
+    y_0 = np.array([0., 0.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
+    tic = time.perf_counter()
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    return solution, error_bound, toc - tic
+
+
+def four_dim(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
+    """
+    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
+    motion. The driving path is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param param: Either Hurst parameter of the driving path, or a fBm given as a rough path
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
+
+    var_steps = 15
+    norm = ta.l1
+    method = 'RK45'
+    partition = np.linspace(0, 1, n + 1)
+    h = 1e-07
+
+    if isinstance(param, rp.RoughPath):
+        x = param
+        p = x.p
+    else:
+        p = 1 / param + 0.1
+        x = rough_fractional_Brownian_path(H=param, n=n*sig_steps, dim=4, T=1., p=p, var_steps=var_steps, norm=norm,
+                                           save_level=N)
+
+    if sym_vf:
+        a, y, z = sp.symbols('a y z')
+        logistic = 1 / (1 + sp.exp(-a))
+        f = sp.Array([[z - y, -z, sp.sin(y), sp.cos(z-y/3)],
+                      [logistic.subs(a, z), logistic.subs(a, y - 2 * z), sp.sin(y*z)**2, sp.tanh(y*y*z-y)]])
+        variables = sp.Array([y, z])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+    else:
+        logistic = lambda z: 1 / (1 + np.exp(-z))
+
+        def f(y, dx):
+            return np.array([(y[1]-y[0])*dx[0] - y[1]*dx[1] + np.sin(y[0])*dx[2] + np.cos(y[1]-y[0]/3)*dx[3],
+                             logistic(y[1])*dx[0] + logistic(y[0]-2*y[1])*dx[1] + np.sin(y[0]*y[1])**2
+                             + np.tanh(y[0]**2 * y[1] - y[0])])
+
+        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
+
+    y_0 = np.array([0., 0.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
+    tic = time.perf_counter()
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    return solution, error_bound, toc - tic
+
+
+def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False, test=False):
     """
     Discusses the problem in smooth_vf_smooth_path.
     :param example: Float that chooses the example that is discussed.
@@ -181,25 +362,102 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param test: If true, uses a significantly smaller number of parameter values
     :return: The entire path, an error bound, and the time
     """
     # 10000, 15849, 25119, 39811, 63096, 100000
     if 0 < example < 1:
-        return
+        kind = fBm_path
+        description = 'fractional Brownian motion'
+        var_steps = 15
+        norm = ta.l1
+        if test:
+            n_vec = np.array([10, 25, 63, 158, 398, 1000])
+            n_steps_vec = np.array([1, 6, 40, 251, 1585])
+        else:
+            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
+            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+        if sym_vf:
+            if test:
+                N_vec = np.array([1, 2, 3])
+            else:
+                N_vec = np.array([1, 2, 3, 4])
+        else:
+            N_vec = np.array([1, 2, 3])
+        if adaptive_tol:
+            atol = 1e-05
+            rtol = 1e-02
+        else:
+            atol = 1e-09
+            rtol = 1e-06
+        sol_dim = 2
+        if test:
+            reference_n = 1585
+            reference_N = 3
+        else:
+            reference_n = 3981
+            reference_N = 4
+        ref_sym_path = True
+        ref_sym_vf = True
+        param = rough_fractional_Brownian_path(H=example, n=reference_n*reference_N, dim=2, T=1., var_steps=var_steps,
+                                               norm=norm, save_level=reference_N)
+        p = param.p
     elif example == 1:
-        return
+        param = None
+        kind = pure_area
+        description = 'pure area'
+        if test:
+            n_vec = np.array([10, 25, 63, 158, 398, 1000])
+            n_steps_vec = np.array([1, 6, 40, 251, 1585])
+        else:
+            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
+            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+        if sym_vf:
+            if test:
+                N_vec = np.array([1, 2, 3])
+            else:
+                N_vec = np.array([1, 2, 3, 4])
+        else:
+            N_vec = np.array([1, 2, 3])
+        if adaptive_tol:
+            atol = 1e-05
+            rtol = 1e-02
+        else:
+            atol = 1e-09
+            rtol = 1e-06
+        norm = ta.l1
+        p = 2
+        sol_dim = 2
+        if test:
+            reference_n = 1585
+            reference_N = 3
+        else:
+            reference_n = 3981
+            reference_N = 4
+        ref_sym_path = False
+        ref_sym_vf = True
     elif 1 < example <= 2:
         param = int(1 / (example - 1))
         kind = smooth_path
         description = 'smooth path'
         if sym_path:
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+            if test:
+                n_vec = np.array([6, 16, 40, 100, 251])
+            else:
+                n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
             n_steps_vec = np.array([1])
         else:
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
-            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+            if test:
+                n_vec = np.array([10, 25, 63, 158, 398, 1000])
+                n_steps_vec = np.array([1, 6, 40, 251, 1585])
+            else:
+                n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
+                n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
         if sym_vf:
-            N_vec = np.array([1, 2, 3, 4])
+            if test:
+                N_vec = np.array([1, 2, 3])
+            else:
+                N_vec = np.array([1, 2, 3, 4])
         else:
             N_vec = np.array([1, 2, 3])
         if adaptive_tol:
@@ -211,12 +469,50 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         norm = ta.l1
         p = 1
         sol_dim = 2
-        reference_n = 3981
-        reference_N = 4
+        if test:
+            reference_n = 1585
+            reference_N = 3
+        else:
+            reference_n = 3981
+            reference_N = 4
         ref_sym_path = True
         ref_sym_vf = True
     elif example == 4:
-        return
+        kind = four_dim
+        description = 'four-dim fractional Brownian motion'
+        var_steps = 15
+        norm = ta.l1
+        if test:
+            n_vec = np.array([10, 25, 63, 158, 398, 1000])
+            n_steps_vec = np.array([1, 6, 40, 251, 1585])
+        else:
+            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
+            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+        if sym_vf:
+            if test:
+                N_vec = np.array([1, 2, 3])
+            else:
+                N_vec = np.array([1, 2, 3, 4])
+        else:
+            N_vec = np.array([1, 2, 3])
+        if adaptive_tol:
+            atol = 1e-05
+            rtol = 1e-02
+        else:
+            atol = 1e-09
+            rtol = 1e-06
+        sol_dim = 2
+        if test:
+            reference_n = 1585
+            reference_N = 3
+        else:
+            reference_n = 3981
+            reference_N = 4
+        ref_sym_path = True
+        ref_sym_vf = True
+        param = rough_fractional_Brownian_path(H=example, n=reference_n * reference_N, dim=4, T=1., var_steps=var_steps,
+                                               norm=norm, save_level=reference_N)
+        p = param.p
     else:
         return
 

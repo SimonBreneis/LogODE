@@ -12,13 +12,10 @@ import vectorfield as vf
 import cProfile
 import sympy as sp
 import tensoralgebra as ta
+from fbm import FBM
 
 
-def count():
-    from math import sqrt
-    for x in range(10**5):
-        sqrt(x)
-
+'''
 if __name__ == '__main__':
     import cProfile, pstats
     cProfile.run("ex.smooth_path(plot=True, N=2, n=300, sym_path=True, sym_vf=True)", "{}.profile".format(__file__))
@@ -26,8 +23,13 @@ if __name__ == '__main__':
     s.strip_dirs()
     s.sort_stats("time").print_stats(100)
 time.sleep(3600)
+'''
 
-
+ex.four_dim(plot=True)
+ex.fBm_path(plot=True)
+ex.pure_area(plot=True)
+ex.smooth_path(plot=True, param=50, n=273)
+time.sleep(3600)
 ex.discussion(example=1.23, show=True, sym_path=True, sym_vf=True)
 time.sleep(3600)
 ex.smooth_path(plot=True, N=2, n=300, sym_path=False, sym_vf=True)

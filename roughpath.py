@@ -217,9 +217,9 @@ class RoughPath:
                         i, j = j, i
                     elif i == j:
                         return 0.
-                    total_increment = increments[i][:(level+1)]
+                    total_increment = increments[i].project(level)
                     for k in range(i+1, j):
-                        total_increment = total_increment * increments[k][:(level+1)]
+                        total_increment = total_increment * increments[k].project(level)
                     return total_increment.norm(level, norm)
 
             variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
@@ -262,7 +262,7 @@ class RoughPathDiscrete(RoughPath):
 
     def get_sig(self, i, j, N):
         if N <= self.save_level:
-            return self.sig[i][j][:(N+1)]
+            return self.sig[i][j].project(N)
         return self.sig[i][j].extend_sig(N)
 
     def incr_canonical(self, s_ind, t_ind, N):
