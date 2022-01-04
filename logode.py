@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import scipy
 from scipy import integrate, special
@@ -55,8 +57,13 @@ class LogODESolver:
         p = self.x.p
 
         error_estimate = 0.
+        tic = time.perf_counter()
+        last_time = tic
         for i in range(1, len(partition)):
-            print(f'Step {i} of {len(partition)}')
+            toc = time.perf_counter()
+            if toc - last_time > 10:
+                print(f'{100*(i-1)/len(partition):.2f}% complete, estimated {int((toc-tic)/(i-1)*(len(partition)-i))}s remaining.')
+                last_time = toc
             y[:, i], vf_norm, omega = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol)
             vf_norm = np.amax(np.array(vf_norm)[:N])
             error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)

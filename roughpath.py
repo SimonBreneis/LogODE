@@ -354,15 +354,17 @@ class RoughPathSymbolic(RoughPath):
     def __init__(self, path, t, p=1, var_steps=15, norm=ta.l1):
         super().__init__(p, var_steps, norm)
         self.path = ta.SymbolicalTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
-        self.t = t  # sympy time variable by which path is parametrised
+        self.t = t
+        self.path_num = [sp.lambdify(self.t, self.path[i], 'numpy') for i in range(2)]
         self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
 
     def new_level(self):
         nl = sp.tensorproduct(self.path[-1], self.derivatives).applyfunc(lambda x: sp.integrate(x, self.t))
         self.path.append(nl - nl.subs(self.t, sp.Integer(0)))
+        self.path_num.append(sp.lambdify(self.t, self.path[-1], 'numpy'))
 
     def eval_path(self, t, N):
-        res = ta.NumericalTensor([np.array(self.path[i].subs(self.t, t)).astype(np.float64) for i in range(N+1)])
+        res = ta.NumericalTensor([np.array(self.path_num[i](t)) for i in range(N+1)])
         res[0] = 1.
         return res
 

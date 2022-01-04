@@ -14,7 +14,23 @@ import sympy as sp
 import tensoralgebra as ta
 
 
-ex.smooth_vf_smooth_path(second_der=False, plot=True, N=2, n=300, symbolic_path=False, symbolic_vf=True)
+def count():
+    from math import sqrt
+    for x in range(10**5):
+        sqrt(x)
+
+if __name__ == '__main__':
+    import cProfile, pstats
+    cProfile.run("ex.smooth_path(plot=True, N=2, n=300, sym_path=True, sym_vf=True)", "{}.profile".format(__file__))
+    s = pstats.Stats("{}.profile".format(__file__))
+    s.strip_dirs()
+    s.sort_stats("time").print_stats(100)
+time.sleep(3600)
+
+
+ex.discussion(example=1.23, show=True, sym_path=True, sym_vf=True)
+time.sleep(3600)
+ex.smooth_path(plot=True, N=2, n=300, sym_path=False, sym_vf=True)
 time.sleep(3600)
 
 '''

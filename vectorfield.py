@@ -44,19 +44,21 @@ class VectorField:
         deg = ls.n_levels()
 
         if self.norm is None:
-            return lambda y: np.sum(np.array([self.derivative(y, ls[i+1]) for i in range(deg)]), axis=0)
+            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(1, deg+1)]), axis=0)
 
         def compute_vf_and_norm(y):
             while deg > len(self.local_norm):
                 self.local_norm.append(0.)
                 self.global_norm.append(0.)
-            ls_norms = np.array([ls.norm(i+1, self.norm) for i in range(deg)])
-            summands = np.array([self.derivative(y, ls[i+1]) for i in range(deg)])
+            ls_norms = np.array([ls.norm(i, self.norm) for i in range(1, deg+1)])
+            summands = np.array([self.derivative(y, ls[i]) for i in range(1, deg+1)])
             vf = np.sum(summands, axis=0)
             for i in range(deg):
                 local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
-                self.local_norm[i] = np.fmax(self.local_norm[i], local_local_norm)
-                self.global_norm[i] = np.fmax(self.global_norm[i], local_local_norm)
+                if local_local_norm > self.local_norm[i]:
+                    self.local_norm[i] = local_local_norm
+                    if local_local_norm > self.global_norm[i]:
+                        self.global_norm[i] = local_local_norm
             return vf
 
         return compute_vf_and_norm
@@ -127,16 +129,12 @@ class VectorFieldSymbolic(VectorField):
         permutations = [*range(der_highest_der.rank())]
         permutations[0] = 1
         permutations[1] = 0
-        next_order = sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)), permutations)
-        self.f.append(next_order)
+        self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)), permutations))
         return None
 
     def derivative(self, y, dx):
         rank = len(dx.shape)
-        vec_field = self.f[rank - 1]
-        eval_vec_field = sp.lambdify(self.variables, vec_field, modules='numpy')
-        eval_vec_field = eval_vec_field(*list(y))
-        return np.tensordot(eval_vec_field, dx, axes=rank)
+        return np.tensordot(sp.lambdify(self.variables, self.f[rank - 1], modules='numpy')(*list(y)), dx, axes=rank)
 
     def vector_field(self, ls):
         """
@@ -147,5 +145,4 @@ class VectorFieldSymbolic(VectorField):
         deg = ls.n_levels()
         while len(self.f) < deg:
             self.new_derivative()
-
         return super().vector_field(ls)
