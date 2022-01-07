@@ -196,15 +196,10 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     if sym_vf:
         y, z = sp.symbols('y z')
         f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z)))]])
-        variables = [y, z]
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        logistic = lambda z: 1 / (1 + np.exp(-z))
-
-        def f(y, dx):
-            return np.array(
-                [(y[1] - y[0]) * dx[0] - y[1] * dx[1], logistic(y[1]) * dx[0] + logistic(y[0] - 2 * y[1]) * dx[1]])
-
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -246,17 +241,12 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
     x = rp.RoughPathExact(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
-        a, y, z = sp.symbols('y z')
-        f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y-2*z)))]])
-        variables = [y, z]
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+        y, z = sp.symbols('y z')
+        f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z)))]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        logistic = lambda z: 1 / (1 + np.exp(-z))
-
-        def f(y, dx):
-            return np.array(
-                [(y[1] - y[0]) * dx[0] - y[1] * dx[1], logistic(y[1]) * dx[0] + logistic(y[0] - 2 * y[1]) * dx[1]])
-
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -294,36 +284,28 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     partition = np.linspace(0, 1, n + 1)
     h = 1e-07
 
-    path_1 = lambda t: np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0]) / param**(1/3)
-    path_2 = lambda t: np.array([1, 0, t]) / param**(1/3)
-    path_3 = lambda t: np.array([np.cos(2 * np.pi * t), -np.sin(2 * np.pi * t), 1]) / param**(1/3)
-    path_4 = lambda t: np.array([1, 0, 1-t]) / param**(1/3)
-
     def path(t):
         t = (t*param % 1.0)*4
         if t < 1:
-            return path_1(t)
+            return np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0]) / param**(1/3)
         if t < 2:
-            return path_2(t-1)
+            return np.array([1, 0, t-1]) / param**(1/3)
         if t < 3:
-            return path_3(t-2)
+            return np.array([np.cos(2 * np.pi * (t-2)), -np.sin(2 * np.pi * (t-2)), 1]) / param**(1/3)
         if t < 4:
-            return path_4(t-3)
+            return np.array([1, 0, 1-(t-3)]) / param**(1/3)
 
     x = rp.RoughPathContinuous(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
-        a, y, z = sp.symbols('y z')
-        f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z)))]])
-        variables = [y, z]
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+        y, z = sp.symbols('y z')
+        f = sp.Array([[z - y, -z, sp.sin(y*y)],
+                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.tanh(y*z)*sp.cos(y)]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        logistic = lambda z: 1 / (1 + np.exp(-z))
-
-        def f(y, dx):
-            return np.array(
-                [(y[1] - y[0]) * dx[0] - y[1] * dx[1] + np.sin(y[0]*y[0])*dx[2], logistic(y[1]) * dx[0] + logistic(y[0] - 2 * y[1]) * dx[1] + np.tanh(y[1]*y[0])*np.cos(y[0])])
-
+        f = lambda y, x: np.array(
+                [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0]*y[0])*x[2],
+                 1/(1-np.exp(y[1])) * x[0] + 1/(1-np.exp(y[0] - 2 * y[1])) * x[1] + np.tanh(y[1]*y[0])*np.cos(y[0])*x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -370,17 +352,12 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
                                            save_level=N)
 
     if sym_vf:
-        a, y, z = sp.symbols('y z')
+        y, z = sp.symbols('y z')
         f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z)))]])
-        variables = [y, z]
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        logistic = lambda z: 1 / (1 + np.exp(-z))
-
-        def f(y, dx):
-            return np.array(
-                [(y[1] - y[0]) * dx[0] - y[1] * dx[1], logistic(y[1]) * dx[0] + logistic(y[0] - 2 * y[1]) * dx[1]])
-
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -427,21 +404,14 @@ def four_dim(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
                                            save_level=N)
 
     if sym_vf:
-        a, y, z = sp.symbols('a y z')
-        logistic = 1 / (1 + sp.exp(-a))
+        y, z = sp.symbols('y z')
         f = sp.Array([[z - y, -z, sp.sin(y), sp.cos(z - y / 3)],
-                      [logistic.subs(a, z), logistic.subs(a, y - 2 * z), sp.sin(y * z) ** 2, sp.tanh(y * y * z - y)]])
-        variables = sp.Array([y, z])
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=variables)
+                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.sin(y * z) ** 2, sp.tanh(y * y * z - y)]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        logistic = lambda z: 1 / (1 + np.exp(-z))
-
-        def f(y, dx):
-            return np.array(
-                [(y[1] - y[0]) * dx[0] - y[1] * dx[1] + np.sin(y[0]) * dx[2] + np.cos(y[1] - y[0] / 3) * dx[3],
-                 logistic(y[1]) * dx[0] + logistic(y[0] - 2 * y[1]) * dx[1] + np.sin(y[0] * y[1]) ** 2
-                 + np.tanh(y[0] ** 2 * y[1] - y[0])])
-
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0])*x[2] + np.cos(y[1]-y[0]/3)*x[3],
+                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]
+                                   + np.sin(y[0]*y[1])**2*x[2] + np.tanh(y[0]**2 * y[1] - y[0])*x[3]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -455,7 +425,7 @@ def four_dim(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
     return solution, error_bound, toc - tic
 
 
-def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False, test=False):
+def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False):
     """
     Discusses the problem in smooth_vf_smooth_path.
     :param example: Float that chooses the example that is discussed.
@@ -472,43 +442,32 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
-    :param test: If true, uses a significantly smaller number of parameter values
     :return: The entire path, an error bound, and the time
     """
     # 10000, 15849, 25119, 39811, 63096, 100000
+    if adaptive_tol:
+        atol = 1e-05
+        rtol = 1e-02
+    else:
+        atol = 1e-09
+        rtol = 1e-06
+
     if 0 < example < 1:
         kind = fBm_path
         description = f'fractional Brownian motion, H={example}'
         var_steps = 15
         norm = ta.l1
-        if test:
-            n_vec = np.array([10, 25, 63, 158, 398, 1000])
-            n_steps_vec = np.array([1, 6, 40, 251, 1585])
-        else:
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-            n_steps_vec = np.array([2000])
+        n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        n_steps_vec = np.array([2000])
         if sym_vf:
-            if test:
-                N_vec = np.array([1, 2, 3])
-            else:
-                N_vec = np.array([1, 2, 3, 4])
+            N_vec = np.array([1, 2, 3, 4])
         else:
             N_vec = np.array([1, 2, 3])
-        if adaptive_tol:
-            atol = 1e-05
-            rtol = 1e-02
-        else:
-            atol = 1e-09
-            rtol = 1e-06
         sol_dim = 2
-        if test:
-            reference_n = 1585
-            reference_N = 3
-        else:
-            reference_n = int(n_vec[-1]*2**(1/example))
-            reference_N = 3
+        reference_n = int(n_vec[-1]*2**(1/example))
+        reference_N = N_vec[-1]
         ref_sym_path = False
-        ref_sym_vf = False
+        ref_sym_vf = True
         param = rough_fractional_Brownian_path(H=example, n=reference_n * int(n_steps_vec[-1]), dim=2, T=1., var_steps=var_steps,
                                                norm=norm, save_level=reference_N)
         print('Constructed')
@@ -517,36 +476,19 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         param = None
         kind = pure_area
         description = 'pure area'
-        if test:
-            n_vec = np.array([10, 25, 63, 158, 398, 1000])
-            n_steps_vec = np.array([1, 6, 40, 251, 1585])
-        else:
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
-            n_steps_vec = np.array([1000])
+        n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
+        n_steps_vec = np.array([1000])
         if sym_vf:
-            if test:
-                N_vec = np.array([1, 2, 3])
-            else:
-                N_vec = np.array([1, 2, 3, 4])
+            N_vec = np.array([1, 2, 3, 4])
         else:
             N_vec = np.array([1, 2, 3])
-        if adaptive_tol:
-            atol = 1e-05
-            rtol = 1e-02
-        else:
-            atol = 1e-09
-            rtol = 1e-06
         norm = ta.l1
         p = 2
         sol_dim = 2
-        if test:
-            reference_n = 1585
-            reference_N = 3
-        else:
-            reference_n = 3981
-            reference_N = 3
+        reference_n = 3981
+        reference_N = N_vec[-1]
         ref_sym_path = False
-        ref_sym_vf = False
+        ref_sym_vf = True
     elif 1 < example <= 2:
         param = int(1 / (example - 1))
         kind = smooth_path
@@ -555,35 +497,21 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         else:
             description = 'oscillatory path'
         if sym_path:
-            N_vec = np.array([1, 2, 3])
-            if test:
-                n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251])
+            if sym_vf:
+                N_vec = np.array([1, 2, 3, 4])
             else:
-                n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+                N_vec = np.array([1, 2, 3])
+            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
             n_steps_vec = np.array([1])
         else:
             N_vec = np.array([3])
-            if test:
-                n_vec = np.array([398])
-                n_steps_vec = np.array([1, 6, 40, 251, 1585])
-            else:
-                n_vec = np.array([398])
-                n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
-        if adaptive_tol:
-            atol = 1e-05
-            rtol = 1e-02
-        else:
-            atol = 1e-09
-            rtol = 1e-06
+            n_vec = np.array([500])
+            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
         norm = ta.l1
         p = 1
         sol_dim = 2
-        if test:
-            reference_n = 398
-            reference_N = 3
-        else:
-            reference_n = 1000
-            reference_N = 3
+        reference_n = n_vec[-1] * 4
+        reference_N = N_vec[-1]
         ref_sym_path = True
         ref_sym_vf = True
     elif 2 < example <= 3:
@@ -596,12 +524,6 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
             N_vec = np.array([1, 2, 3])
         n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
         n_steps_vec = np.array([2000])
-        if adaptive_tol:
-            atol = 1e-05
-            rtol = 1e-02
-        else:
-            atol = 1e-09
-            rtol = 1e-06
         norm = ta.l1
         p = 1
         sol_dim = 2
@@ -614,35 +536,18 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         description = 'four-dim fractional Brownian motion'
         var_steps = 15
         norm = ta.l1
-        if test:
-            n_vec = np.array([10, 25, 63, 158, 398, 1000])
-            n_steps_vec = np.array([1, 6, 40, 251, 1585])
-        else:
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
-            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+        n_vec = np.array([10, 25, 63, 158, 398, 1000])
+        n_steps_vec = np.array([2000])
         if sym_vf:
-            if test:
-                N_vec = np.array([1, 2, 3])
-            else:
-                N_vec = np.array([1, 2, 3, 4])
+            N_vec = np.array([1, 2, 3, 4])
         else:
             N_vec = np.array([1, 2, 3])
-        if adaptive_tol:
-            atol = 1e-05
-            rtol = 1e-02
-        else:
-            atol = 1e-09
-            rtol = 1e-06
         sol_dim = 2
-        if test:
-            reference_n = 1585
-            reference_N = 3
-        else:
-            reference_n = 3981
-            reference_N = 4
-        ref_sym_path = True
+        reference_n = int(n_vec[-1] * 2 ** (1 / example))
+        reference_N = N_vec[-1]
+        ref_sym_path = False
         ref_sym_vf = True
-        param = rough_fractional_Brownian_path(H=example, n=reference_n * reference_N, dim=4, T=1., var_steps=var_steps,
+        param = rough_fractional_Brownian_path(H=example, n=reference_n * int(n_steps_vec[-1]), dim=4, T=1., var_steps=var_steps,
                                                norm=norm, save_level=reference_N)
         p = param.p
     else:
