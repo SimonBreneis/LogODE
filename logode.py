@@ -3,6 +3,7 @@ import numpy as np
 import scipy
 from scipy import integrate, special
 import roughpath as rp
+import vectorfield as vf
 
 
 def insert_list(master, insertion, index):
@@ -45,8 +46,6 @@ class LogODESolver:
         """
         self.f.reset_local_norm()
         ls = self.x.log_incr(s, t, N)
-        for i in range(1, N + 1):
-            ls[i] = np.transpose(ls[i], [i - 1 - j for j in range(i)])
         y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls)(z), (0, 1), y_s, method=self.method,
                                 atol=atol, rtol=rtol).y[:, -1]
         return y, self.f.local_norm, self.x.omega(s, t)
@@ -71,7 +70,7 @@ class LogODESolver:
             toc = time.perf_counter()
             if toc - last_time > 10:
                 print(
-                    f'{100 * (i - 1) / len(partition):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
+                    f'{100 * (i - 1) / (len(partition)-1):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
                 last_time = toc
             y[:, i], vf_norm, omega = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol)
             vf_norm = np.amax(np.array(vf_norm)[:N])

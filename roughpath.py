@@ -137,20 +137,22 @@ class RoughPathDiscrete(RoughPath):
         self.val = values
         self.save_level = save_level
 
-        if save_level > 0:
-            length = len(times) - 1
-            n_discr_levels = int(np.log2(length)) + 1
-            n_intervals = [0] * n_discr_levels
-            n_intervals[0] = length
-            for i in range(n_discr_levels - 1):
-                n_intervals[i + 1] = int(n_intervals[i] / 2.)
-            self.sig = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
-                        range(n_discr_levels)]
-            for j in range(n_intervals[0]):
-                self.sig[0][j] = ta.sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
-            for i in range(1, len(self.sig)):
-                for j in range(n_intervals[i]):
-                    self.sig[i][j] = self.sig[i - 1][2 * j] * self.sig[i - 1][2 * j + 1]
+        if save_level < 1:
+            save_level = 1
+
+        length = len(times) - 1
+        n_discr_levels = int(np.log2(length)) + 1
+        n_intervals = [0] * n_discr_levels
+        n_intervals[0] = length
+        for i in range(n_discr_levels - 1):
+            n_intervals[i + 1] = int(n_intervals[i] / 2.)
+        self.sig = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
+                    range(n_discr_levels)]
+        for j in range(n_intervals[0]):
+            self.sig[0][j] = ta.sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
+        for i in range(1, len(self.sig)):
+            for j in range(n_intervals[i]):
+                self.sig[i][j] = self.sig[i - 1][2 * j] * self.sig[i - 1][2 * j + 1]
 
     def get_sig(self, i, j, N):
         """
@@ -208,8 +210,8 @@ class RoughPathDiscrete(RoughPath):
         :param N: Level of the signature
         :return: The signature
         """
-        s_ind = sum(map(lambda x: x < s, self.times))
-        t_ind = sum(map(lambda x: x <= t, self.times)) - 1
+        s_ind = np.sum(self.times < s)
+        t_ind = np.sum(self.times <= t)-1
         x_s = self.val[0, :]
         if s_ind > 0:
             x_s = self.val[s_ind - 1, :] + (self.val[s_ind, :] - self.val[s_ind - 1, :]) * (
@@ -286,7 +288,7 @@ class RoughPathExact(RoughPath):
         result = self.path(s, t)
         exact_degree = len(result) - 1
         if N <= exact_degree:
-            return result
+            return result.project(N)
         if self.n_steps == 1:
             return result.extend_sig(N)
         times = np.linspace(s, t, self.n_steps + 1)
@@ -309,9 +311,9 @@ class RoughPathSymbolic(RoughPath):
         :param norm: Norm used in computing the p-variation
         """
         super().__init__(p, var_steps, norm)
-        self.path = ta.SymbolicTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
+        self.path = ta.SymbolicTensor([sp.Integer(1), sp.simplify(path - path.subs(t, sp.Integer(0)))])
         self.t = t
-        self.path_num = [sp.lambdify(self.t, self.path[i], 'numpy') for i in range(2)]
+        self.path_num = [lambda s: 1, sp.lambdify(self.t, self.path[1], 'numpy')]
         self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
 
     def new_level(self):

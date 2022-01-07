@@ -125,7 +125,7 @@ class Tensor:
         result.tensor[0] += 1
         curr_tensor_prod = self
         for k in range(2, len(self)):
-            curr_tensor_prod = curr_tensor_prod * self / k
+            curr_tensor_prod = curr_tensor_prod * self * (1/k)
             result = result + curr_tensor_prod
         return result
 
@@ -227,7 +227,7 @@ class SymbolicTensor(Tensor):
                 new_tens.tensor[i] = self.tensor[i]
             return new_tens
 
-    def to_numerical_tensor(self):
+    def to_numeric_tensor(self):
         return NumericTensor([float(self.tensor[0]), *[np.array(self.tensor[i]).astype(np.float64) for i in range(1, len(self))]])
 
 
@@ -240,13 +240,13 @@ class NumericTensor(Tensor):
 
     def __add__(self, other):
         if isinstance(other, SymbolicTensor):
-            other = other.to_numerical_tensor()
+            other = other.to_numeric_tensor()
         return NumericTensor([self.tensor[i] + other.tensor[i] for i in range(min(len(self), len(other)))])
 
     def __mul__(self, other):
         if isinstance(other, Tensor):
             if isinstance(other, SymbolicTensor):
-                other = other.to_numerical_tensor()
+                other = other.to_numeric_tensor()
             N = min(self.n_levels(), other.n_levels())
             x = self.tensor
             y = other.tensor

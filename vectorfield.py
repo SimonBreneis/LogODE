@@ -100,8 +100,8 @@ class VectorFieldNumeric(VectorField):
             vec = np.zeros(x_dim)
             vec[i] = 1.
             direction = self.f[0](y, vec)
-            result += (self.derivative(y + self.h / 2 * direction, dx[..., i])
-                       - self.derivative(y - self.h / 2 * direction, dx[..., i])) / self.h
+            result += (self.derivative(y + self.h / 2 * direction, dx[i, ...])
+                       - self.derivative(y - self.h / 2 * direction, dx[i, ...])) / self.h
         return result
 
 
@@ -121,6 +121,7 @@ class VectorFieldSymbolic(VectorField):
         """
         super().__init__(f, norm)
         self.variables = variables
+        self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
 
     def new_derivative(self):
         """
@@ -135,6 +136,7 @@ class VectorFieldSymbolic(VectorField):
         permutations[1] = 0
         self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)),
                                      permutations))
+        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules='numpy'))
         return None
 
     def derivative(self, y, dx):
@@ -145,7 +147,7 @@ class VectorFieldSymbolic(VectorField):
         :return: The len(dx.shape)-th term in the log-ODE method
         """
         rank = len(dx.shape)
-        return np.tensordot(sp.lambdify(self.variables, self.f[rank - 1], modules='numpy')(*list(y)), dx, axes=rank)
+        return np.tensordot(self.f_num[rank-1](*list(y)), dx, axes=rank)
 
     def vector_field(self, ls):
         """
