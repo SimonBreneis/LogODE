@@ -34,7 +34,7 @@ class RoughPath:
         self.var_steps = var_steps
         self.norm = norm
 
-    def incr(self, s, t, N):
+    def sig(self, s, t, N):
         """
         Returns the signature up to level N of the rough path on the interval [s,t].
         :param s: Initial time point
@@ -44,7 +44,7 @@ class RoughPath:
         """
         return ta.trivial_tens_num(1, N)
 
-    def log_incr(self, s, t, N):
+    def logsig(self, s, t, N):
         """
         Returns the log-signature up to level N of the rough path on the interval [s,t].
         :param s: Initial time point
@@ -52,7 +52,7 @@ class RoughPath:
         :param N: Level of the log-signature
         :return: The log-signature up to level N on [s,t]
         """
-        return self.incr(s, t, N).log()
+        return self.sig(s, t, N).log()
 
     def p_variation(self, s, t, p, var_steps, norm):
         """
@@ -69,7 +69,7 @@ class RoughPath:
             return 0.
         levels = int(p)
         times = np.linspace(s, t, var_steps+1)
-        increments = [self.incr(times[i], times[i+1], levels) for i in range(var_steps)]
+        increments = [self.sig(times[i], times[i + 1], levels) for i in range(var_steps)]
         variations = np.zeros(levels)
         for level in range(1, levels+1):
             if level == 1:
@@ -130,7 +130,7 @@ class RoughPathDiscrete(RoughPath):
         :param var_steps: Number of steps used in computing the p-variation of the path
         :param norm: Norm used in computing the p-variation of the path
         :param save_level: The signature up to save_level is precomputed and saved on a dyadic grid to enhance
-            perfomance
+            performance
         """
         super().__init__(p, var_steps, norm)
         self.times = times
@@ -202,7 +202,7 @@ class RoughPathDiscrete(RoughPath):
                 right = self.incr_canonical(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
         return left * inner * right
 
-    def incr(self, s, t, N):
+    def sig(self, s, t, N):
         """
         Computes the signature up to level N on [s,t].
         :param s: Initial time point
@@ -236,21 +236,21 @@ class RoughPathDiscrete(RoughPath):
 
 
 class RoughPathContinuous(RoughPath):
-    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=15, p=1., var_steps=15, norm=ta.l1):
         """
         This representation of a rough path is useful if only the first level of the rough path is given, and this level
         is given as a vectorized function of one variable.
         :param path: The (first level of the) path given as a vectorized function
-        :param n_steps: Number of steps used in computing the signature
+        :param sig_steps: Number of steps used in computing the signature
         :param p: Roughness of the path
         :param var_steps: Number of steps used in computing the p-variation
         :param norm: Norm used in computing the p-variation
         """
         super().__init__(p, var_steps, norm)
         self.path = path
-        self.n_steps = n_steps
+        self.sig_step = sig_steps
 
-    def incr(self, s, t, N):
+    def sig(self, s, t, N):
         """
         Computes the signature up to level N on [s,t].
         :param s: Initial time point
@@ -258,16 +258,16 @@ class RoughPathContinuous(RoughPath):
         :param N: Level of the signature
         :return: The signature
         """
-        return ta.sig(self.path(np.linspace(s, t, self.n_steps + 1)).T, N)
+        return ta.sig(self.path(np.linspace(s, t, self.sig_step + 1)).T, N)
 
 
 class RoughPathExact(RoughPath):
-    def __init__(self, path, n_steps=15, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=15, p=1., var_steps=15, norm=ta.l1):
         """
         This representation of a rough path is useful if the rough path is given for multiple levels as a function of
         two time variables. It need not be vectorized.
         :param path: The path given as a function of two variables returning an instance of Tensor
-        :param n_steps: Number of steps used in approximating the signature (if the level needed is higher than the
+        :param sig_steps: Number of steps used in approximating the signature (if the level needed is higher than the
             level given)
         :param p: Roughness of the path
         :param var_steps: Number of steps used in approximating the p-variation
@@ -275,9 +275,9 @@ class RoughPathExact(RoughPath):
         """
         super().__init__(p, var_steps, norm)
         self.path = path
-        self.n_steps = n_steps
+        self.sig_steps = sig_steps
 
-    def incr(self, s, t, N):
+    def sig(self, s, t, N):
         """
         Computes the signature up to level N on [s,t].
         :param s: Initial time point
@@ -289,11 +289,11 @@ class RoughPathExact(RoughPath):
         exact_degree = len(result) - 1
         if N <= exact_degree:
             return result.project(N)
-        if self.n_steps == 1:
+        if self.sig_steps == 1:
             return result.extend_sig(N)
-        times = np.linspace(s, t, self.n_steps + 1)
+        times = np.linspace(s, t, self.sig_steps + 1)
         result = self.path(s, times[1]).extend_sig(N)
-        for i in range(1, self.n_steps):
+        for i in range(1, self.sig_steps):
             result = result * self.path(times[i], times[i+1]).extend_sig(N)
         return result
 
@@ -311,7 +311,7 @@ class RoughPathSymbolic(RoughPath):
         :param norm: Norm used in computing the p-variation
         """
         super().__init__(p, var_steps, norm)
-        self.path = ta.SymbolicTensor([sp.Integer(1), sp.simplify(path - path.subs(t, sp.Integer(0)))])
+        self.path = ta.SymbolicTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
         self.t = t
         self.path_num = [lambda s: 1, sp.lambdify(self.t, self.path[1], 'numpy')]
         self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
@@ -337,7 +337,7 @@ class RoughPathSymbolic(RoughPath):
         res[0] = 1.
         return res
 
-    def incr(self, s, t, N):
+    def sig(self, s, t, N):
         """
         Computes the signature up to level N on [s,t].
         :param s: Initial time point

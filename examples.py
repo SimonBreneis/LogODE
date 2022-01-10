@@ -47,14 +47,98 @@ def log_linear_regression(x, y):
     return slope, np.exp(intercept), r_value, p_value, std_err
 
 
-def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, description, regression=True, show=False,
-                    save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
+def compare_N(N, n, sig_steps, errors, error_bounds, times, description, x_time=False, show=False,
+              save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
     """
     Constructs many plots for the discussion of the examples.
     :param N: The level(s) of the log-ODE method
     :param n: The number(s) of intervals of the log-ODE method
-    :param n_steps: The number(s) of steps used in the approximation of the signatures
-    :param true_errors: The errors of the log-ODE approximations
+    :param sig_steps: The number(s) of steps used in the approximation of the signatures
+    :param errors: The errors of the log-ODE approximations
+    :param error_bounds: The error bounds of the log-ODE approximations
+    :param times: The run-times of applying the log-ODE approximations
+    :param description: Description of the example that is being discussed
+    :param x_time: If True, the argument (x-axis) is time
+    :param show: If True, shows all the plots when they are constructed
+    :param save: If True, saves all the plots (as PDF files) in directory
+    :param directory: Folder where the plots are saved (if save is True)
+    :param adaptive_tol: Were the error tolerances of the ODE solvers chosen adaptively?
+    :param atol: (Base) absolute error tolerance of the ODE solver
+    :param rtol: (Base) relative error tolerance of the ODE solver
+    :param sym_vf: Were symbolic vector fields used?
+    :param sym_path: Were symbolic rough paths used?
+    :return: Nothing
+    """
+    description = description[0].upper() + description[1:]
+    title = ''
+    if adaptive_tol:
+        title += 'with adaptive error tolerance, '
+    if sym_vf:
+        title += 'symbolic derivatives'
+    else:
+        title += 'numeric derivatives'
+    if sym_path:
+        title += ', symbolic signatures'
+    else:
+        title += ', numeric signatures'
+    if adaptive_tol:
+        title += f'\na_tol={atol:.2g}' + r'$n^{-N/p}$' + f', r_tol={rtol:.2g}' + r'$n^{-N/p}$'
+    else:
+        title += f'\na_tol={atol:.2g}, r_tol={rtol:.2g}'
+
+    fig, ax1 = plt.subplots()
+    ax1.set_ylabel('Error')
+    color = ['b', 'g', 'r', 'y', 'm', 'k', 'c']
+
+    if x_time:
+        ax1.set_xlabel('Time (s)')
+        for i in range(len(N)):
+            c = color[int(i % 7)]
+            t = times[i, :]
+            e = errors[i, :]
+            j = 1
+            while j < len(t):
+                if t[j] < t[j - 1]:
+                    t = np.delete(t, [j])
+                    e = np.delete(e, [j])
+                else:
+                    j += 1
+            ax1.loglog(t, e, c, label=f'N={N[i]}')
+    else:
+        ax1.set_xlabel('Number of intervals')
+        ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+        ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
+        for i in range(len(N)):
+            c = color[int(i % 7)]
+            ax1.loglog(n, errors[i, :], c + '-', label=f'N={N[i]}')
+            ax1.loglog(n, error_bounds[i, :], c + '--')
+            ax2.loglog(n, times[i, :], c + '+-')
+
+    ax1.legend(loc='best')
+
+    specifics = 'compare N'
+    if x_time:
+        specifics += ' w.r.t. time'
+    if not sym_path:
+        specifics += f', {sig_steps} signature steps'
+    filename = specifics
+    plt.title(description + '\n' + title + '\n' + specifics)
+    if not x_time:
+        fig.tight_layout()  # otherwise the right y-label is slightly clipped
+    if show:
+        plt.show()
+    if save:
+        plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
+
+
+def compare_n(N, n, sig_steps, errors, error_bounds, times, description, regression=True, show=False,
+              save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
+    """
+    Constructs many plots for the discussion of the examples.
+    :param N: The level(s) of the log-ODE method
+    :param n: The number(s) of intervals of the log-ODE method
+    :param sig_steps: The number(s) of steps used in the approximation of the signatures
+    :param errors: The errors of the log-ODE approximations
     :param error_bounds: The error bounds of the log-ODE approximations
     :param times: The run-times of applying the log-ODE approximations
     :param description: Description of the example that is being discussed
@@ -72,86 +156,139 @@ def comparison_plot(N, n, n_steps, true_errors, error_bounds, times, description
     description = description[0].upper() + description[1:]
     title = ''
     if adaptive_tol:
-        title += 'with adaptive error tolerance'
-    else:
-        title += 'without adaptive error tolerance'
+        title += 'with adaptive error tolerance, '
     if sym_vf:
-        title += '\nsymbolic derivatives'
+        title += 'symbolic derivatives'
     else:
-        title += '\nnumeric derivatives'
+        title += 'numeric derivatives'
     if sym_path:
         title += ', symbolic signatures'
     else:
         title += ', numeric signatures'
 
-    if isinstance(N, np.ndarray):
-        case = 1
-        variable = N
-    elif isinstance(n, np.ndarray):
-        case = 2
-        variable = n
+    if adaptive_tol:
+        title += f'\na_tol={atol:.2g}' + r'$n^{-N/p}$' + f', r_tol={rtol:.2g}' + r'$n^{-N/p}$'
     else:
-        case = 3
-        variable = n_steps
+        title += f'\na_tol={atol:.2g}, r_tol={rtol:.2g}'
 
     fig, ax1 = plt.subplots()
-
-    if case == 1:
-        xlabel = "Degree"
-    elif case == 2:
-        xlabel = "Number of intervals"
-    else:
-        xlabel = "Signature steps"
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    x_label = 'Number of intervals'
     ax1.set_ylabel('Error')
-    ax1.loglog(variable, true_errors, color='r', label='True error')
-    ax1.loglog(variable, error_bounds, color='g', label='Error bound')
-    reg_index = np.sum(variable < np.ones(len(variable))*35)
+    ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
+
+    ax1.loglog(n, errors, color='r', label='True error')
+    ax1.loglog(n, error_bounds, color='g', label='Error bound')
+    reg_index = np.sum(n < np.ones(len(n)) * 35)
     if regression:
-        power, constant, r_value, p_value, std_err = log_linear_regression(variable[reg_index:], true_errors[reg_index:])
-        ax1.loglog(variable, constant * variable ** power, 'r--')
-        xlabel += '\n\nError ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+        power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], errors[reg_index:])
+        ax1.loglog(n, constant * n ** power, 'r--')
+        x_label += '\n\nError ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
             '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
 
-        power, constant, r_value, p_value, std_err = log_linear_regression(variable[reg_index:], error_bounds[reg_index:])
-        ax1.loglog(variable, constant * variable ** power, 'g--')
-        xlabel += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+        power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], error_bounds[reg_index:])
+        ax1.loglog(n, constant * n ** power, 'g--')
+        x_label += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
+
+    ax2.loglog(n, times, color='b', label='Time')
+    if regression:
+        power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], times[reg_index:])
+        ax2.loglog(n, constant * n ** power, 'b--')
+        x_label += ',\nTime ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
+
+    ax1.set_xlabel(x_label)
+    ax1.legend(loc='center left')
+    ax2.legend(loc='center right')
+
+    specifics = f'degree {N}'
+    if not sym_path:
+        specifics += f', {sig_steps} signature steps'
+    filename = specifics
+    plt.title(description + '\n' + title + '\n' + specifics)
+    fig.tight_layout()  # otherwise the right y-label is slightly clipped
+    if show:
+        plt.show()
+    if save:
+        plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
+
+
+def compare_sig_steps(N, n, sig_steps, errors, error_bounds, times, description, regression=True, show=False,
+                      save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
+    """
+    Constructs many plots for the discussion of the examples.
+    :param N: The level(s) of the log-ODE method
+    :param n: The number(s) of intervals of the log-ODE method
+    :param sig_steps: The number(s) of steps used in the approximation of the signatures
+    :param errors: The errors of the log-ODE approximations
+    :param error_bounds: The error bounds of the log-ODE approximations
+    :param times: The run-times of applying the log-ODE approximations
+    :param description: Description of the example that is being discussed
+    :param regression: If True, apply log-log-regression and also plot the result
+    :param show: If True, shows all the plots when they are constructed
+    :param save: If True, saves all the plots (as PDF files) in directory
+    :param directory: Folder where the plots are saved (if save is True)
+    :param adaptive_tol: Were the error tolerances of the ODE solvers chosen adaptively?
+    :param atol: (Base) absolute error tolerance of the ODE solver
+    :param rtol: (Base) relative error tolerance of the ODE solver
+    :param sym_vf: Were symbolic vector fields used?
+    :param sym_path: Were symbolic rough paths used?
+    :return: Nothing
+    """
+    description = description[0].upper() + description[1:]
+    title = ''
+    if adaptive_tol:
+        title += 'with adaptive error tolerance, '
+    if sym_vf:
+        title += 'symbolic derivatives'
+    else:
+        title += 'numeric derivatives'
+    if sym_path:
+        title += ', symbolic signatures'
+    else:
+        title += ', numeric signatures'
+    if adaptive_tol:
+        title += f'\na_tol={atol:.2g}' + r'$n^{-N/p}$' + f', r_tol={rtol:.2g}' + r'$n^{-N/p}$'
+    else:
+        title += f'\na_tol={atol:.2g}, r_tol={rtol:.2g}'
+
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+    x_label = "Signature steps"
+    ax1.set_ylabel('Error')
+    ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
+
+    ax1.loglog(sig_steps, errors, color='r', label='True error')
+    ax1.loglog(sig_steps, error_bounds, color='g', label='Error bound')
+    reg_index = np.sum(sig_steps < np.ones(len(sig_steps)) * 35)
+    if regression:
+        power, constant, r_value, p_value, std_err = log_linear_regression(sig_steps[reg_index:], errors[reg_index:])
+        ax1.loglog(sig_steps, constant * sig_steps ** power, 'r--')
+        x_label += '\n\nError ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
+
+        power, constant, r_value, p_value, std_err = log_linear_regression(sig_steps[reg_index:],
+                                                                           error_bounds[reg_index:])
+        ax1.loglog(sig_steps, constant * sig_steps ** power, 'g--')
+        x_label += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
+
+    ax2.loglog(sig_steps, times, color='b', label='Time')
+    if regression:
+        power, constant, r_value, p_value, std_err = log_linear_regression(sig_steps[reg_index:], times[reg_index:])
+        ax2.loglog(sig_steps, constant * sig_steps ** power, 'b--')
+        x_label += ',\nTime ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
             '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
 
     ax1.legend(loc='center left')
-
-    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
-    ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
-    ax2.loglog(variable, times, color='b', label='Time')
-    if regression:
-        power, constant, r_value, p_value, std_err = log_linear_regression(variable[reg_index:], times[reg_index:])
-        ax2.loglog(variable, constant * variable ** power, 'b--')
-        xlabel += ',\nTime ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
-            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
-
     ax2.legend(loc='center right')
+    ax1.set_xlabel(x_label)
 
-    specifics = ''
-    if case == 1:
-        if sym_path:
-            specifics += f'{n} intervals'
-        else:
-            specifics += f'{n} intervals, {n_steps} signature steps'
-    elif case == 2:
-        if sym_path:
-            specifics += f'degree {N}'
-        else:
-            specifics += f'degree {N}, {n_steps} signature steps'
-    else:
-        specifics += f'degree {N}, {n} intervals'
+    specifics = f'degree {N}, {n} intervals'
     filename = specifics
-    filename = filename.replace('\n', ', ')
-    if adaptive_tol:
-        title += f', a_tol={atol:.2g}' + r'$n^{-N/p}$' + f', r_tol={rtol:.2g}' + r'$n^{-N/p}$'
-    else:
-        title += f', a_tol={atol:.2g}, r_tol={rtol:.2g}'
     plt.title(description + '\n' + title + '\n' + specifics)
-    ax1.set_xlabel(xlabel)
     fig.tight_layout()  # otherwise the right y-label is slightly clipped
     if show:
         plt.show()
@@ -191,7 +328,7 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
     else:
         path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sin(2 * np.pi * param * t)]) / np.sqrt(param)
-        x = rp.RoughPathContinuous(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
         y, z = sp.symbols('y z')
@@ -237,8 +374,9 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
     partition = np.linspace(0, 1, n + 1)
     h = 1e-07
 
-    path = lambda s, t: ta.NumericTensor([1., np.array([0., 0.]), np.array([[0., np.pi*(t - s)], [np.pi*(s - t), 0.]])])
-    x = rp.RoughPathExact(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+    path = lambda s, t: ta.NumericTensor(
+        [1., np.array([0., 0.]), np.array([[0., np.pi * (t - s)], [np.pi * (s - t), 0.]])])
+    x = rp.RoughPathExact(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
         y, z = sp.symbols('y z')
@@ -285,27 +423,28 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     h = 1e-07
 
     def path(t):
-        t = (t*param % 1.0)*4
+        t = (t * param % 1.0) * 4
         if t < 1:
-            return np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0]) / param**(1/3)
+            return np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0]) / param ** (1 / 3)
         if t < 2:
-            return np.array([1, 0, t-1]) / param**(1/3)
+            return np.array([1, 0, t - 1]) / param ** (1 / 3)
         if t < 3:
-            return np.array([np.cos(2 * np.pi * (t-2)), -np.sin(2 * np.pi * (t-2)), 1]) / param**(1/3)
+            return np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)), 1]) / param ** (1 / 3)
         if t < 4:
-            return np.array([1, 0, 1-(t-3)]) / param**(1/3)
+            return np.array([1, 0, 1 - (t - 3)]) / param ** (1 / 3)
 
-    x = rp.RoughPathContinuous(path=path, n_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+    x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
         y, z = sp.symbols('y z')
-        f = sp.Array([[z - y, -z, sp.sin(y*y)],
-                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.tanh(y*z)*sp.cos(y)]])
+        f = sp.Array([[z - y, -z, sp.sin(y * y)],
+                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.tanh(y * z) * sp.cos(y)]])
         vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
         f = lambda y, x: np.array(
-                [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0]*y[0])*x[2],
-                 1/(1-np.exp(y[1])) * x[0] + 1/(1-np.exp(y[0] - 2 * y[1])) * x[1] + np.tanh(y[1]*y[0])*np.cos(y[0])*x[2]])
+            [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0] * y[0]) * x[2],
+             1 / (1 - np.exp(y[1])) * x[0] + 1 / (1 - np.exp(y[0] - 2 * y[1])) * x[1] + np.tanh(y[1] * y[0]) * np.cos(
+                 y[0]) * x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -406,12 +545,14 @@ def four_dim(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
     if sym_vf:
         y, z = sp.symbols('y z')
         f = sp.Array([[z - y, -z, sp.sin(y), sp.cos(z - y / 3)],
-                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.sin(y * z) ** 2, sp.tanh(y * y * z - y)]])
+                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.sin(y * z) ** 2,
+                       sp.tanh(y * y * z - y)]])
         vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
     else:
-        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0])*x[2] + np.cos(y[1]-y[0]/3)*x[3],
-                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]
-                                   + np.sin(y[0]*y[1])**2*x[2] + np.tanh(y[0]**2 * y[1] - y[0])*x[3]])
+        f = lambda y, x: np.array(
+            [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0]) * x[2] + np.cos(y[1] - y[0] / 3) * x[3],
+             1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]
+             + np.sin(y[0] * y[1]) ** 2 * x[2] + np.tanh(y[0] ** 2 * y[1] - y[0]) * x[3]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
@@ -457,36 +598,36 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         description = f'fractional Brownian motion, H={example}'
         var_steps = 15
         norm = ta.l1
-        n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-        n_steps_vec = np.array([2000])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        sig_steps = np.array([2000])
         if sym_vf:
-            N_vec = np.array([1, 2, 3, 4])
+            if example >= 0.5:
+                N = np.array([1, 2, 3, 4])
+            else:
+                N = np.array([i for i in range(1, int(1/example + 3))])
         else:
-            N_vec = np.array([1, 2, 3])
+            N = np.array([1, 2, 3])
         sol_dim = 2
-        reference_n = int(n_vec[-1]*2**(1/example))
-        reference_N = N_vec[-1]
+        ref_n = int(n[-1] * 2 ** (1 / example))
+        ref_N = N[-1]
         ref_sym_path = False
         ref_sym_vf = True
-        param = rough_fractional_Brownian_path(H=example, n=reference_n * int(n_steps_vec[-1]), dim=2, T=1., var_steps=var_steps,
-                                               norm=norm, save_level=reference_N)
+        param = rough_fractional_Brownian_path(H=example, n=ref_n * int(sig_steps[-1]), dim=2, T=1.,
+                                               var_steps=var_steps, norm=norm, save_level=ref_N)
         print('Constructed')
         p = param.p
     elif example == 1:
         param = None
         kind = pure_area
         description = 'pure area'
-        n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512])
-        n_steps_vec = np.array([1000])
-        if sym_vf:
-            N_vec = np.array([1, 2, 3, 4])
-        else:
-            N_vec = np.array([1, 2, 3])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        sig_steps = np.array([10000])
+        N = np.array([1, 2, 3])
         norm = ta.l1
         p = 2
         sol_dim = 2
-        reference_n = 3981
-        reference_N = N_vec[-1]
+        ref_n = 1000
+        ref_N = N[-1]
         ref_sym_path = False
         ref_sym_vf = True
     elif 1 < example <= 2:
@@ -498,20 +639,25 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
             description = 'oscillatory path'
         if sym_path:
             if sym_vf:
-                N_vec = np.array([1, 2, 3, 4])
+                N = np.array([1, 2, 3, 4])
             else:
-                N_vec = np.array([1, 2, 3])
-            n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-            n_steps_vec = np.array([1])
+                N = np.array([1, 2, 3])
+            if description == 'oscillatory path':
+                n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+            else:
+                n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398])
+            sig_steps = np.array([1])
+            ref_n = n[-1] * 4
+            ref_N = N[-1]
         else:
-            N_vec = np.array([3])
-            n_vec = np.array([500])
-            n_steps_vec = np.array([1, 3, 6, 16, 40, 100, 251, 631, 1585, 3981, 10000])
+            N = np.array([3])
+            n = np.array([300])
+            sig_steps = np.array([1, 2, 4, 8, 16, 31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000])
+            ref_n = n[0]
+            ref_N = N[0]
         norm = ta.l1
         p = 1
         sol_dim = 2
-        reference_n = n_vec[-1] * 4
-        reference_N = N_vec[-1]
         ref_sym_path = True
         ref_sym_vf = True
     elif 2 < example <= 3:
@@ -519,16 +665,16 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         kind = third_level
         description = 'path with significant third level'
         if sym_vf:
-            N_vec = np.array([1, 2, 3, 4])
+            N = np.array([1, 2, 3, 4])
         else:
-            N_vec = np.array([1, 2, 3])
-        n_vec = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-        n_steps_vec = np.array([2000])
+            N = np.array([1, 2, 3])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        sig_steps = np.array([2000])
         norm = ta.l1
         p = 1
         sol_dim = 2
-        reference_n = n_vec[-1]*4
-        reference_N = N_vec[-1]
+        ref_n = n[-1] * 4
+        ref_N = N[-1]
         ref_sym_path = False
         ref_sym_vf = True
     elif example == 4:
@@ -536,19 +682,20 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         description = 'four-dim fractional Brownian motion'
         var_steps = 15
         norm = ta.l1
-        n_vec = np.array([10, 25, 63, 158, 398, 1000])
-        n_steps_vec = np.array([2000])
+        n = np.array([10, 25, 63, 158, 398, 1000])
+        sig_steps = np.array([2000])
         if sym_vf:
-            N_vec = np.array([1, 2, 3, 4])
+            N = np.array([1, 2, 3, 4])
         else:
-            N_vec = np.array([1, 2, 3])
+            N = np.array([1, 2, 3])
         sol_dim = 2
-        reference_n = int(n_vec[-1] * 2 ** (1 / example))
-        reference_N = N_vec[-1]
+        ref_n = int(n[-1] * 2 ** (1 / example))
+        ref_N = N[-1]
         ref_sym_path = False
         ref_sym_vf = True
-        param = rough_fractional_Brownian_path(H=example, n=reference_n * int(n_steps_vec[-1]), dim=4, T=1., var_steps=var_steps,
-                                               norm=norm, save_level=reference_N)
+        param = rough_fractional_Brownian_path(H=example, n=ref_n * int(sig_steps[-1]), dim=4, T=1.,
+                                               var_steps=var_steps,
+                                               norm=norm, save_level=ref_N)
         p = param.p
     else:
         return
@@ -556,18 +703,18 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
     directory = 'C:/Users/breneis/Desktop/Studium/Mathematik WIAS/T/9999-99 Main file/LogODE plots/'
     directory = directory + description
 
-    solutions = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec), sol_dim))
-    error_bounds = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
-    times = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
-    true_errors = np.zeros((len(N_vec), len(n_vec), len(n_steps_vec)))
+    solutions = np.zeros((len(N), len(n), len(sig_steps), sol_dim))
+    error_bounds = np.zeros((len(N), len(n), len(sig_steps)))
+    times = np.zeros((len(N), len(n), len(sig_steps)))
+    true_errors = np.zeros((len(N), len(n), len(sig_steps)))
 
     if adaptive_tol:
-        atol_ = atol * reference_n ** (-reference_N / float(p))
-        rtol_ = rtol * reference_n ** (-reference_N / float(p))
+        atol_ = atol * ref_n ** (-ref_N / float(p))
+        rtol_ = rtol * ref_n ** (-ref_N / float(p))
     else:
         atol_ = atol
         rtol_ = rtol
-    true_sol, _, _ = kind(n=reference_n, N=reference_N, param=param, plot=False, atol=atol_, rtol=rtol_,
+    true_sol, _, _ = kind(n=ref_n, N=ref_N, param=param, plot=False, atol=atol_, rtol=rtol_,
                           sym_path=ref_sym_path, sym_vf=ref_sym_vf)
     plt.plot(true_sol[0, :], true_sol[1, :])
     plt.title('Solution for ' + description)
@@ -577,22 +724,24 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         plt.savefig(directory + '/' + description[0].upper() + description[1:] + ', solution', format='pdf')
     true_sol = true_sol[:, -1]
 
-    # true_sol = np.array([-0.95972823, -0.97375319]) (smooth, k=4)
+    # true_sol = np.array([-0.95972823, -0.97375321]) (smooth, k=4)
     # true_sol = np.array([-1.18830677, -0.74708976]) (oscillatory, k=25)
+    # true_sol = np.array([-1.23253942, -0.70746147]) (oscillatory, k=36)
+    # true_sol = np.array([-1.60472409, -0.46299073]) (pure area)
     print(f'The final value for the problem ' + description + f' is {true_sol}.')
 
-    for i in range(len(N_vec)):
-        for j in range(len(n_vec)):
+    for i in range(len(N)):
+        for j in range(len(n)):
             if adaptive_tol:
-                atol_ = atol * n_vec[j] ** (-N_vec[i] / float(p))
-                rtol_ = rtol * n_vec[j] ** (-N_vec[i] / float(p))
+                atol_ = atol * n[j] ** (-N[i] / float(p))
+                rtol_ = rtol * n[j] ** (-N[i] / float(p))
             else:
                 atol_ = atol
                 rtol_ = rtol
-            for l in range(len(n_steps_vec)):
-                print(f"N = {N_vec[i]}, n = {n_vec[j]}, n_steps = {n_steps_vec[l]}")
+            for l in range(len(sig_steps)):
+                print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
                 for _ in range(rounds):
-                    sol, err, tim = kind(n=n_vec[j], N=N_vec[i], param=param, plot=False, sig_steps=n_steps_vec[l],
+                    sol, err, tim = kind(n=n[j], N=N[i], param=param, plot=False, sig_steps=sig_steps[l],
                                          atol=atol_, rtol=rtol_, sym_path=sym_path, sym_vf=sym_vf)
                     solutions[i, j, l, :] = sol[:, -1]
                     error_bounds[i, j, l] = err
@@ -600,73 +749,20 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
                     true_errors[i, j, l] = norm(sol[:, -1] - true_sol)
                 times[i, j, l] /= rounds
 
-            if len(n_steps_vec) > 1:
-                comparison_plot(N_vec[i], n_vec[j], n_steps_vec, true_errors[i, j, :], error_bounds[i, j, :],
-                                times[i, j, :], description, True, show, save, directory, adaptive_tol, atol, rtol,
-                                sym_vf, sym_path)
-        if len(n_vec) > 1:
-            for l in range(len(n_steps_vec)):
-                comparison_plot(N_vec[i], n_vec, n_steps_vec[l], true_errors[i, :, l], error_bounds[i, :, l],
-                                times[i, :, l], description, True, show, save, directory, adaptive_tol, atol, rtol,
-                                sym_vf, sym_path)
-    if len(N_vec) > 1:
-        for j in range(len(n_vec)):
-            for l in range(len(n_steps_vec)):
-                comparison_plot(N_vec, n_vec[j], n_steps_vec[l], true_errors[:, j, l], error_bounds[:, j, l],
-                                times[:, j, l], description, False, show, save, directory, adaptive_tol, atol, rtol,
-                                sym_vf, sym_path)
-
-    plt.close('all')
-    for i in range(len(N_vec)):
-        plt.loglog(n_vec, true_errors[i, :, -1], label=r'N=' + f'{N_vec[i]}')
-    plt.title(description[0].upper() + description[1:])
-    plt.xlabel('n')
-    plt.ylabel('Error')
-    plt.legend(loc='upper right')
-    plt.show()
-
-    '''
-    times_flat = times.flatten()
-    permutation = times_flat.argsort()
-    current_error = np.amax(true_errors) + 1.
-    opt_times = []
-    opt_N = []
-    opt_n = []
-    opt_n_steps = []
-    opt_err = []
-    opt_bounds = []
-    for i in range(len(permutation)):
-        index = np.unravel_index(permutation[i], times.shape)
-        err = true_errors[index]
-        if err < current_error:
-            print(
-                f'In {times[index]:.3g} s, one can achieve an error of {err:.3g} by choosing N={N_vec[index[0]]}, n={n_vec[index[1]]}, n_steps={n_steps_vec[2]}. The corresponding error bound is {error_bounds[index]:.3g}.')
-            current_error = err
-            opt_times.append(times[index])
-            opt_N.append(N_vec[index[0]])
-            opt_n.append(n_vec[index[1]])
-            opt_n_steps.append(n_steps_vec[index[2]])
-            opt_err.append(err)
-            opt_bounds.append(error_bounds[index])
-    plt.loglog(opt_times, opt_err, 'r', label='True error')
-    plt.loglog(opt_times, opt_bounds, 'g', label='Error bound')
-    description = description[0].upper() + description[1:]
-    title = ''
-    if adaptive_tol:
-        title += 'with adaptive error tolerance'
-    else:
-        title += 'without adaptive error tolerance'
-    if sym_vf:
-        title += ', with symbolic derivatives'
-    else:
-        title += ', with numeric derivatives'
-    if sym_path:
-        title += ', symbolic signatures'
-    else:
-        title += ', numeric signagures'
-    plt.title(description + '\n' + title)
-    plt.xlabel('Time (s)')
-    plt.ylabel('Error')
-    plt.legend(loc='best')
-    plt.show()
-    '''
+            if len(sig_steps) > 1:
+                compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], error_bounds[i, j, :], times[i, j, :],
+                                  description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        if len(n) > 1:
+            for l in range(len(sig_steps)):
+                compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], error_bounds[i, :, l], times[i, :, l],
+                          description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+    if len(N) > 1:
+        compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
+                  False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
+                  True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        if len(sig_steps) > 4:
+            compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+                      False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+                      True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)

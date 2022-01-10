@@ -21,7 +21,7 @@ path = sp.Array([sp.cos(2 * 4 * sp.pi * t) / sp.sqrt(4), sp.sin(2 * 4 * sp.pi * 
 x = rp.RoughPathSymbolic(path=path, t=t, p=1, var_steps=15, norm=ta.l1)
 
 path_ = lambda t: np.array([np.cos(2 * np.pi * 4 * t), np.sin(2 * np.pi * 4 * t)]) / np.sqrt(4)
-x_ = rp.RoughPathContinuous(path=path_, n_steps=1000, p=1, var_steps=15, norm=ta.l1)
+x_ = rp.RoughPathContinuous(path=path_, sig_steps=1000, p=1, var_steps=15, norm=ta.l1)
 
 y, z = sp.symbols('y z')
 f = sp.Array([[z - y, -z], [1/(1+sp.exp(-z)), 1/(1+sp.exp(-(y - 2 * z)))]])
@@ -31,20 +31,22 @@ f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                            1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
 vec_field_ = vf.VectorFieldNumeric(f=[f], h=1e-07, norm=ta.l1)
 
-print(vec_field.vector_field(x.log_incr(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
-print(vec_field_.vector_field(x_.log_incr(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
+print(vec_field.vector_field(x.logsig(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
+print(vec_field_.vector_field(x_.logsig(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
 
-ex.discussion(example=0.4, show=False, save=True, sym_path=False, sym_vf=False)
+'''
+ex.discussion(example=0.4, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(3600)
-ex.discussion(example=0.5, show=False, save=True, sym_path=False, sym_vf=False)
+ex.discussion(example=0.5, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(3600)
-ex.discussion(example=0.75, show=False, save=True, sym_path=False, sym_vf=False)
+'''
+ex.discussion(example=0.75, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(3600)
-ex.discussion(example=1, save=True, show=False, sym_path=False, sym_vf=False)
+ex.discussion(example=1, save=True, show=False, sym_path=False, sym_vf=True)
 time.sleep(3600)
-ex.discussion(example=1.039, save=True, show=False, sym_path=True, sym_vf=True)
-time.sleep(360000)
-ex.discussion(example=1.23, save=True, show=False, sym_path=False, sym_vf=False)
+ex.discussion(example=1.02785, save=True, show=False, sym_path=True, sym_vf=True)
+time.sleep(3600)
+ex.discussion(example=1.23, save=True, show=False, sym_path=False, sym_vf=True)
 time.sleep(3600)
 ex.discussion(example=1.23, save=False, show=False, sym_path=True, sym_vf=True)
 time.sleep(3600)
