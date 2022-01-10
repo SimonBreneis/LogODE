@@ -146,13 +146,13 @@ class RoughPathDiscrete(RoughPath):
         n_intervals[0] = length
         for i in range(n_discr_levels - 1):
             n_intervals[i + 1] = int(n_intervals[i] / 2.)
-        self.sig = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
-                    range(n_discr_levels)]
+        self.signature = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
+                          range(n_discr_levels)]
         for j in range(n_intervals[0]):
-            self.sig[0][j] = ta.sig(np.array([self.val[j, :], self.val[j+1, :]]), save_level)
-        for i in range(1, len(self.sig)):
+            self.signature[0][j] = ta.sig(np.array([self.val[j, :], self.val[j + 1, :]]), save_level)
+        for i in range(1, len(self.signature)):
             for j in range(n_intervals[i]):
-                self.sig[i][j] = self.sig[i - 1][2 * j] * self.sig[i - 1][2 * j + 1]
+                self.signature[i][j] = self.signature[i - 1][2 * j] * self.signature[i - 1][2 * j + 1]
 
     def get_sig(self, i, j, N):
         """
@@ -163,8 +163,8 @@ class RoughPathDiscrete(RoughPath):
         :return: The signature
         """
         if N <= self.save_level:
-            return self.sig[i][j].project(N)
-        return self.sig[i][j].extend_sig(N)
+            return self.signature[i][j].project(N)
+        return self.signature[i][j].extend_sig(N)
 
     def incr_canonical(self, s_ind, t_ind, N):
         """

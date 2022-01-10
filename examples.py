@@ -598,7 +598,8 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         description = f'fractional Brownian motion, H={example}'
         var_steps = 15
         norm = ta.l1
-        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        # n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
+        n = np.array([1, 2, 3, 4, 6])
         sig_steps = np.array([2000])
         if sym_vf:
             if example >= 0.5:
