@@ -32,8 +32,12 @@ def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.
         save_level = np.ceil(p)
     f = fbm.FBM(n=n, hurst=H, length=T)
     times = fbm.times(n=n, length=T)
-    values = np.array([f.fbm() for _ in range(dim)]).T
-    return rp.RoughPathDiscrete(times=times, values=values, p=p, var_steps=var_steps, norm=norm, save_level=save_level)
+    values = np.array([f.fbm() for _ in range(dim)])
+    if save_level <= 5:
+        return rp.RoughPathDiscrete(times=times, values=values.T, p=p, var_steps=var_steps, norm=norm,
+                                    save_level=save_level)
+    return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=-1),
+                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
 
 
 def log_linear_regression(x, y):
@@ -423,15 +427,18 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     h = 1e-07
 
     def path(t):
-        t = (t * param % 1.0) * 4
-        if t < 1:
-            return np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0]) / param ** (1 / 3)
-        if t < 2:
-            return np.array([1, 0, t - 1]) / param ** (1 / 3)
-        if t < 3:
-            return np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)), 1]) / param ** (1 / 3)
-        if t < 4:
-            return np.array([1, 0, 1 - (t - 3)]) / param ** (1 / 3)
+        t = ((t * param) % 1.0) * 4
+        if isinstance(t, np.ndarray):
+            a = (t < 1) * np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), np.zeros(len(t))])
+            b = ((1 <= t) & (t < 2)) * np.array([np.ones(len(t)), np.zeros(len(t)), t - 1])
+            c = ((2 <= t) & (t < 3)) * np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)), np.ones(len(t))])
+            d = (3 <= t) * np.array([np.ones(len(t)), np.zeros(len(t)), 1 - (t - 3)])
+        else:
+            a = (t < 1) * np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0])
+            b = ((1 <= t) & (t < 2)) * np.array([1, 0, t - 1])
+            c = ((2 <= t) & (t < 3)) * np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)), 1])
+            d = (3 <= t) * np.array([1, 0, 1 - (t - 3)])
+        return (a + b + c + d) / param**(1/3)
 
     x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
@@ -598,14 +605,13 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         description = f'fractional Brownian motion, H={example}'
         var_steps = 15
         norm = ta.l1
-        # n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-        n = np.array([1, 2, 3, 4, 6])
-        sig_steps = np.array([2000])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585, 2512, 3981])
+        sig_steps = np.array([50000])
         if sym_vf:
             if example >= 0.5:
                 N = np.array([1, 2, 3, 4])
             else:
-                N = np.array([i for i in range(1, int(1/example + 3))])
+                N = np.array([i for i in range(1, int(1 / example + 3))])
         else:
             N = np.array([1, 2, 3])
         sol_dim = 2
@@ -698,6 +704,23 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
                                                var_steps=var_steps,
                                                norm=norm, save_level=ref_N)
         p = param.p
+    elif 4 < example <= 5:
+        param = int(1 / (example - 4))
+        kind = third_level
+        description = 'third level'
+        if sym_vf:
+            N = np.array([1, 2, 3, 4, 5])
+        else:
+            N = np.array([1, 2, 3])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000])
+        sig_steps = np.array([1])
+        ref_n = n[-1] * 4
+        ref_N = N[-1]
+        norm = ta.l1
+        p = 1
+        sol_dim = 2
+        ref_sym_path = True
+        ref_sym_vf = True
     else:
         return
 
