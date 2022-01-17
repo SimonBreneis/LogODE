@@ -38,15 +38,16 @@ class VectorField:
         """
         return None
 
-    def vector_field(self, ls):
+    def vector_field(self, ls, compute_norm=False):
         """
         Computes the vector field used in the Log-ODE method.
         :param ls: The log-signature of the driving path up to level deg
+        :param compute_norm: If True, additionally computes the norm of the vector field
         :return: Solution on partition points
         """
         deg = ls.n_levels()
 
-        if self.norm is None:
+        if not compute_norm or self.norm is None:
             return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(1, deg+1)]), axis=0)
 
         def compute_vf_and_norm(y):
@@ -149,13 +150,14 @@ class VectorFieldSymbolic(VectorField):
         rank = len(dx.shape)
         return np.tensordot(self.f_num[rank-1](*list(y)), dx, axes=rank)
 
-    def vector_field(self, ls):
+    def vector_field(self, ls, compute_norm=False):
         """
         Computes the vector field used in the Log-ODE method.
         :param ls: The log-signature of the driving path up to level deg
+        :param compute_norm: If True, additionally computes the vector field norm
         :return: Solution on partition points
         """
         deg = ls.n_levels()
         while len(self.f) < deg:
             self.new_derivative()
-        return super().vector_field(ls)
+        return super().vector_field(ls, compute_norm)

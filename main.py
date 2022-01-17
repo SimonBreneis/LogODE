@@ -31,11 +31,16 @@ f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                            1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
 vec_field_ = vf.VectorFieldNumeric(f=[f], h=1e-07, norm=ta.l1)
 
-print(vec_field.vector_field(x.logsig(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
-print(vec_field_.vector_field(x_.logsig(0.1, 0.143, 2))(np.array([-0.3, -0.52])))
+print(vec_field.vector_field(x.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
+print(vec_field_.vector_field(x_.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
 
-ex.discussion(example=4.01562, show=False, save=True, sym_path=True, sym_vf=True)
-time.sleep(36000)
+
+ex.discussion(example=2.01562, show=False, save=True, sym_path=True, sym_vf=True)
+time.sleep(360000)
+ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
+time.sleep(360000)
+ex.third_level(N=0, plot=False, sig_steps=2000, sym_path=True, sym_vf=True, param=64, atol=1e-06, rtol=1e-05)
+time.sleep(360000)
 ex.discussion(example=0.1, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(360000)
 ex.discussion(example=0.2, show=False, save=True, sym_path=False, sym_vf=True)

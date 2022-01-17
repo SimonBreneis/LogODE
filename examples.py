@@ -29,7 +29,7 @@ def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.
         if p - int(p) > 0.95:
             p = np.ceil(p)
     if save_level == 0:
-        save_level = np.ceil(p)
+        save_level = int(np.ceil(p))
     f = fbm.FBM(n=n, hurst=H, length=T)
     times = fbm.times(n=n, length=T)
     values = np.array([f.fbm() for _ in range(dim)])
@@ -218,7 +218,7 @@ def compare_n(N, n, sig_steps, errors, error_bounds, times, description, regress
         plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
 
 
-def compare_sig_steps(N, n, sig_steps, errors, error_bounds, times, description, regression=True, show=False,
+def compare_sig_steps(N, n, sig_steps, errors, times, description, regression=True, show=False,
                       save=False, directory=None, adaptive_tol=False, atol=0., rtol=0., sym_vf=False, sym_path=False):
     """
     Constructs many plots for the discussion of the examples.
@@ -226,7 +226,6 @@ def compare_sig_steps(N, n, sig_steps, errors, error_bounds, times, description,
     :param n: The number(s) of intervals of the log-ODE method
     :param sig_steps: The number(s) of steps used in the approximation of the signatures
     :param errors: The errors of the log-ODE approximations
-    :param error_bounds: The error bounds of the log-ODE approximations
     :param times: The run-times of applying the log-ODE approximations
     :param description: Description of the example that is being discussed
     :param regression: If True, apply log-log-regression and also plot the result
@@ -265,18 +264,11 @@ def compare_sig_steps(N, n, sig_steps, errors, error_bounds, times, description,
     ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
 
     ax1.loglog(sig_steps, errors, color='r', label='True error')
-    ax1.loglog(sig_steps, error_bounds, color='g', label='Error bound')
     reg_index = np.sum(sig_steps < np.ones(len(sig_steps)) * 35)
     if regression:
         power, constant, r_value, p_value, std_err = log_linear_regression(sig_steps[reg_index:], errors[reg_index:])
         ax1.loglog(sig_steps, constant * sig_steps ** power, 'r--')
         x_label += '\n\nError ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
-            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
-
-        power, constant, r_value, p_value, std_err = log_linear_regression(sig_steps[reg_index:],
-                                                                           error_bounds[reg_index:])
-        ax1.loglog(sig_steps, constant * sig_steps ** power, 'g--')
-        x_label += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
             '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
 
     ax2.loglog(sig_steps, times, color='b', label='Time')
@@ -298,6 +290,65 @@ def compare_sig_steps(N, n, sig_steps, errors, error_bounds, times, description,
         plt.show()
     if save:
         plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
+
+
+def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
+    """
+    Uses a nilpotent linear vector field. The path is smooth, and essentially
+    k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param param: Number of times the path revolves around the origin
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
+    p = 1
+    var_steps = 15
+    norm = ta.l1
+    method = 'RK45'
+    partition = np.linspace(0, 1, n + 1)
+    h = 1e-07
+
+    if sym_path:
+        param = sp.Integer(param)
+        t = sp.symbols('t')
+        path = sp.Array([sp.cos(20 * t), sp.sinh(2*t-1)])/10
+        x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
+    else:
+        path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sin(2 * np.pi * param * t)]) / np.sqrt(param)
+        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+
+    if sym_vf:
+        y, z = sp.symbols('y z')
+        # f = sp.Array([[y-z, 2*y-z], [y+z, y+2*z]])
+        f = sp.Array([[y+z, y+2*z], [3*y, 6*y-z]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+    else:
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
+        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
+
+    y_0 = np.array([1., 1.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
+    tic = time.perf_counter()
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    if N < 1:
+        return solution, toc-tic
+    return solution, error_bound, toc - tic
 
 
 def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
@@ -346,11 +397,16 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
+    if N < 1:
+        return solution, toc-tic
     return solution, error_bound, toc - tic
 
 
@@ -394,18 +450,23 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
+    if N < 1:
+        return solution, toc-tic
     return solution, error_bound, toc - tic
 
 
 def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
-    k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
+    k times the (rescaled) unit circle. The driving path is 3-dimensional, the solution is 2-dimensional.
     :param n: Number of intervals
     :param N: Degree of the Log-ODE method
     :param param: Number of times the path revolves around the origin
@@ -457,11 +518,16 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
+    if N < 1:
+        return solution, toc-tic
     return solution, error_bound, toc - tic
 
 
@@ -509,63 +575,7 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
-    toc = time.perf_counter()
-    if plot:
-        plt.plot(solution[0, :], solution[1, :])
-        plt.show()
-    return solution, error_bound, toc - tic
-
-
-def four_dim(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
-    """
-    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
-    motion. The driving path is 2-dimensional, the solution is 2-dimensional.
-    :param n: Number of intervals
-    :param N: Degree of the Log-ODE method
-    :param param: Either Hurst parameter of the driving path, or a fBm given as a rough path
-    :param plot: If true, plots the entire path. If false, does not plot anything
-    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
-    :param atol: Absolute error tolerance of the ODE solver
-    :param rtol: Relative error tolerance of the ODE solver
-    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
-        numerically
-    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
-        numerically
-    :return: The entire path, an error bound, and the time
-    """
-
-    var_steps = 15
-    norm = ta.l1
-    method = 'RK45'
-    partition = np.linspace(0, 1, n + 1)
-    h = 1e-07
-
-    if isinstance(param, rp.RoughPath):
-        x = param
-        p = x.p
-    else:
-        p = 1 / param + 0.1
-        x = rough_fractional_Brownian_path(H=param, n=n * sig_steps, dim=4, T=1., p=p, var_steps=var_steps, norm=norm,
-                                           save_level=N)
-
-    if sym_vf:
-        y, z = sp.symbols('y z')
-        f = sp.Array([[z - y, -z, sp.sin(y), sp.cos(z - y / 3)],
-                      [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z))), sp.sin(y * z) ** 2,
-                       sp.tanh(y * y * z - y)]])
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
-    else:
-        f = lambda y, x: np.array(
-            [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0]) * x[2] + np.cos(y[1] - y[0] / 3) * x[3],
-             1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]
-             + np.sin(y[0] * y[1]) ** 2 * x[2] + np.tanh(y[0] ** 2 * y[1] - y[0]) * x[3]])
-        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
-
-    y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
-    tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol)
+    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -600,7 +610,24 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         atol = 1e-09
         rtol = 1e-06
 
-    if 0 < example < 1:
+    if example == 0:
+        param = 4
+        kind = nilpotent_vf
+        description = 'nilpotent vector field'
+        if sym_vf:
+            N = np.array([1, 2])
+        else:
+            N = np.array([1, 2, 3])
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398])
+        sig_steps = np.array([1])
+        ref_n = n[-1] * 4
+        ref_N = N[-1]
+        norm = ta.l1
+        p = 1
+        sol_dim = 2
+        ref_sym_path = True
+        ref_sym_vf = True
+    elif 0 < example < 1:
         kind = fBm_path
         description = f'fractional Brownian motion, H={example}'
         var_steps = 15
@@ -670,56 +697,19 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
     elif 2 < example <= 3:
         param = int(1 / (example - 2))
         kind = third_level
-        description = 'path with significant third level'
+        description = 'third level'
         if sym_vf:
             N = np.array([1, 2, 3, 4])
         else:
             N = np.array([1, 2, 3])
         n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631])
-        sig_steps = np.array([2000])
+        sig_steps = np.array([5000])
         norm = ta.l1
         p = 1
         sol_dim = 2
         ref_n = n[-1] * 4
         ref_N = N[-1]
         ref_sym_path = False
-        ref_sym_vf = True
-    elif example == 4:
-        kind = four_dim
-        description = 'four-dim fractional Brownian motion'
-        var_steps = 15
-        norm = ta.l1
-        n = np.array([10, 25, 63, 158, 398, 1000])
-        sig_steps = np.array([2000])
-        if sym_vf:
-            N = np.array([1, 2, 3, 4])
-        else:
-            N = np.array([1, 2, 3])
-        sol_dim = 2
-        ref_n = int(n[-1] * 2 ** (1 / example))
-        ref_N = N[-1]
-        ref_sym_path = False
-        ref_sym_vf = True
-        param = rough_fractional_Brownian_path(H=example, n=ref_n * int(sig_steps[-1]), dim=4, T=1.,
-                                               var_steps=var_steps,
-                                               norm=norm, save_level=ref_N)
-        p = param.p
-    elif 4 < example <= 5:
-        param = int(1 / (example - 4))
-        kind = third_level
-        description = 'third level'
-        if sym_vf:
-            N = np.array([1, 2, 3, 4, 5])
-        else:
-            N = np.array([1, 2, 3])
-        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000])
-        sig_steps = np.array([1])
-        ref_n = n[-1] * 4
-        ref_N = N[-1]
-        norm = ta.l1
-        p = 1
-        sol_dim = 2
-        ref_sym_path = True
         ref_sym_vf = True
     else:
         return
@@ -774,7 +764,7 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
                 times[i, j, l] /= rounds
 
             if len(sig_steps) > 1:
-                compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], error_bounds[i, j, :], times[i, j, :],
+                compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :],
                                   description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
         if len(n) > 1:
             for l in range(len(sig_steps)):

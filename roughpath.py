@@ -22,6 +22,35 @@ def beta(p):
         return 2*p*(int(p)+1)/(int(p)+1-p)  # upper bound
 
 
+def local_log_ode_error_constant(N, p, dim):
+    """
+    Returns the constant in the error bound for a single step of the Log-ODE method.
+    :param N: Degree of the method
+    :param p: Roughness of the path
+    :param dim: Dimension of the path
+    :return: The constant
+    """
+    '''
+    if p == 1:
+        return 0.34 * (7 / 3.) ** (N + 1)
+    if p == 2:
+        return 25 * self.dim / scipy.special.gamma((N + 1) / p + 1) + 0.081 * (7 / 3) ** (N + 1)
+    if p == 3:
+        return 1000 * self.dim ** 3 / scipy.special.gamma((N + 1) / p + 1) + 0.038 * (7 / 3) ** (N + 1)
+    '''
+    if 1 <= p < 2:
+        C = 1
+    elif 2 <= p < 3:
+        C = 3 * np.sqrt(dim)
+    elif 3 <= p < 4:
+        C = 7 * dim
+    else:
+        C = 21 * dim ** (9 / 4)
+    b = beta(p)
+    return (1.13 / b) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(
+        int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * b ** (1 / N))) ** (N + 1)
+
+
 class RoughPath:
     def __init__(self, p=1, var_steps=15, norm=ta.l1):
         """
@@ -97,7 +126,7 @@ class RoughPath:
             variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
         return variations
 
-    def omega(self, s, t, p=0., var_steps=0, norm=None):
+    def omega(self, s, t, p=0., var_steps=0, norm=None, by_level=False):
         """
         Computes (lower bounds) the control function of the rough path on [s,t].
         :param s: Initial time point
@@ -105,6 +134,7 @@ class RoughPath:
         :param p: Roughness parameter of the control function/the rough path
         :param var_steps: Number of steps used in estimating the p-variation
         :param norm: Norm used in computing the p-variation
+        :param by_level: If True, returns an array with a dominating control function for each level
         :return: The control function of the rough path on [s,t]
         """
         if p == 0.:
@@ -116,7 +146,52 @@ class RoughPath:
         variations = self.p_variation(s, t, p, var_steps, norm)
         omegas = beta(p) * np.array([scipy.special.gamma(i/p + 1) for i in range(1, int(p)+1)]) * variations
         omegas = np.array([omegas[i]**(p/(i+1)) for i in range(int(p))])
+        if by_level:
+            return omegas
         return np.amax(omegas)
+
+    def dim(self):
+        return self.sig(0., 0., 1).dim()
+
+    def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
+        times = np.linspace(0., T, n_intervals+1)
+        return np.sum(np.array([self.omega(s=times[i], t=times[i+1], p=p, var_steps=var_steps, norm=norm) for i in range(n_intervals)]))
+
+    def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
+        """
+        Estimates a good choice for the roughness parameter p of the rough path on the interval [0,T].
+        :param T: Final time, terminal time of the rough path
+        :param p_lower: Lower point of range where an appropriate p is searched
+        :param p_upper: Upper point of range where an appropriate p is searched
+        :param reset_p: If True, resets the roughness p of the rough path to p
+        :return: Estimate for p
+        """
+        var_steps = max(self.var_steps, 100)
+        current_p = p_upper
+        found_critical_p = False
+        while not found_critical_p:
+            omegas = self.omega(0., T, current_p, var_steps=var_steps, by_level=True)
+            index = np.argmax(omegas)
+            if index == len(omegas)-1:
+                found_critical_p = True
+                p_lower = int(current_p)
+            else:
+                current_p -= 0.5
+                if current_p < p_lower:
+                    found_critical_p = True
+        print(p_lower)
+
+        ps = np.linspace(p_lower, p_upper, 100)
+        error_bounds = np.zeros(len(ps))
+        for j in range(len(ps)):
+            print(j)
+            error_bounds[j] += self.omega(s=0., t=T, p=ps[j], var_steps=var_steps)
+            error_bounds[j] *= local_log_ode_error_constant(int(np.ceil(ps[j])+1), ps[j], self.dim())
+        index = np.argmin(error_bounds)
+        p = ps[index]
+        if reset_p:
+            self.p = p
+        return p
 
 
 class RoughPathDiscrete(RoughPath):
@@ -236,7 +311,7 @@ class RoughPathDiscrete(RoughPath):
 
 
 class RoughPathContinuous(RoughPath):
-    def __init__(self, path, sig_steps=15, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1):
         """
         This representation of a rough path is useful if only the first level of the rough path is given, and this level
         is given as a vectorized function of one variable.
@@ -262,7 +337,7 @@ class RoughPathContinuous(RoughPath):
 
 
 class RoughPathExact(RoughPath):
-    def __init__(self, path, sig_steps=15, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1):
         """
         This representation of a rough path is useful if the rough path is given for multiple levels as a function of
         two time variables. It need not be vectorized.
@@ -296,6 +371,9 @@ class RoughPathExact(RoughPath):
         for i in range(1, self.sig_steps):
             result = result * self.path(times[i], times[i+1]).extend_sig(N)
         return result
+
+    def exact_degree(self):
+        return len(self.path(0., 0.))-1
 
 
 class RoughPathSymbolic(RoughPath):
