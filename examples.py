@@ -74,7 +74,6 @@ def asymmetric_Brownian_path(n, T=1., q=0.5):
     """
     Returns a sample path of an asymmetric Brownian motion.
     :param n: Number of equidistant evaluation points
-    :param dim: Dimension of the path
     :param T: Final time
     :param q: Probability of reflecting a negative area
     :return: An instance of a RoughPath
@@ -124,7 +123,7 @@ def rough_asymmetric_Brownian_path_time(n, dim, T=1., q=0.5, p=0., var_steps=15,
         return rp.RoughPathDiscrete(times=times, values=values.T, p=p, var_steps=var_steps, norm=norm,
                                     save_level=save_level)
     return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=-1),
-                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
+                                  sig_steps=int(np.fmax(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
 
 
 def log_linear_regression(x, y):
@@ -426,12 +425,12 @@ def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, 
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([1., 1., 1.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -491,12 +490,12 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -544,12 +543,12 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -612,12 +611,12 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -669,12 +668,12 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
@@ -713,8 +712,8 @@ def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-0
         p = x.p
     else:
         p = 1 / param + 0.1
-        x = rough_fractional_Brownian_path_time(H=param, n=n * sig_steps, dim=2, T=1., p=p, var_steps=var_steps, norm=norm,
-                                           save_level=N)
+        x = rough_fractional_Brownian_path_time(H=param, n=n * sig_steps, dim=2, T=1., p=p, var_steps=var_steps,
+                                                norm=norm, save_level=N)
 
     if sym_vf:
         y, z = sp.symbols('y z')
@@ -726,12 +725,12 @@ def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-0
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
     y_0 = np.array([0., 0.])
-    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
-        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
     else:
-        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                               method=method, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
