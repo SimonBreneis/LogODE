@@ -6,9 +6,11 @@ from esig import tosig as ts
 def l1(x):
     """
     Implementation of the l^1-norm.
-    :param x: A numpy-array
+    :param x: A numpy-array or a Tensor
     :return: The l^1-norm
     """
+    if isinstance(x, Tensor):
+        return np.sum(np.array([x.norm(i, l1) for i in range(1, x.n_levels()+1)]))
     return np.sum(np.abs(x))
 
 
@@ -171,6 +173,13 @@ class Tensor:
         """
         self.tensor.append(tensor_level)
 
+    def to_array(self):
+        """
+        Transforms the Tensor into an array.
+        :return: The array
+        """
+        return None
+
 
 class SymbolicTensor(Tensor):
     def __init__(self, tensor):
@@ -225,6 +234,23 @@ class SymbolicTensor(Tensor):
     def simplify(self):
         self.tensor = [sp.simplify(self.tensor[i]) for i in range(len(self))]
 
+    def to_array(self):
+        """
+        Transforms the tensor into an array.
+        :return: The array
+        """
+        dimension = self.dim()
+        levels = self.n_levels()
+        length = (dimension**(levels+1) - 1)/(dimension-1)
+        result = sp.Array([0]*length)
+        index = 0
+        next_index = 1
+        for level in range(levels):
+            result[index:next_index] = self[level]
+            index = next_index
+            next_index += dimension**(level+1)
+        return result
+
 
 class NumericTensor(Tensor):
     def __init__(self, tensor):
@@ -269,6 +295,23 @@ class NumericTensor(Tensor):
             for i in range(len(self)):
                 new_tens.tensor[i] = self.tensor[i]
             return new_tens
+
+    def to_array(self):
+        """
+        Transforms the tensor into an array.
+        :return: The array
+        """
+        dimension = self.dim()
+        levels = self.n_levels()
+        length = (dimension**(levels+1) - 1)/(dimension-1)
+        result = np.empty(length)
+        index = 0
+        next_index = 1
+        for level in range(levels):
+            result[index:next_index] = self[level]
+            index = next_index
+            next_index += dimension**(level+1)
+        return result
 
 
 def trivial_tens_num(dim, N):
@@ -347,3 +390,95 @@ def logsig(x, N):
     :return: The log-signature, instance of NumericTensor
     """
     return sig(x, N).log()
+
+
+def tensor_algebra_embedding(x, N):
+    """
+    Natural embedding of V^{otimes k} into T(V).
+    :param x: The vector
+    :param N: Level of the resulting tensor
+    :return: The (truncated) tensor
+    """
+    level = len(x.shape)
+    if level == 0:
+        dim = 1
+    elif level == 1:
+        dim = len(x)
+    else:
+        dim = x.shape[0]
+    if isinstance(x, np.ndarray):
+        res = trivial_tens_num(dim, N)
+    else:
+        res = trivial_tens_sym(dim, N)
+    if N >= level:
+        res[level] = x
+    return res
+
+
+def sig_first_level_num(x_1, N):
+    """
+    Returns the signature associated to an increment x_1.
+    :param x_1: Increment
+    :param N: The level of the signature
+    :return: The signature tensor, instance of NumericTensor
+    """
+    path = np.zeros((2, len(x_1)))
+    path[1, :] = x_1
+    return sig(path, N)
+
+
+def array_to_tensor(x, dim):
+    """
+    Converts a numpy (or sympy) array to a NumericTensor (or SymbolicTensor, respectively).
+    :param x: The array
+    :param dim: The dimension of the underlying vector space (the dimension of the first component)
+    :return: The Tensor
+    """
+    tensor = []
+    index = 0
+    next_index = 1
+    level = 0
+    while next_index <= len(x):
+        tensor.append(x[index:next_index])
+        index = next_index
+        next_index += dim**(level+1)
+        level += 1
+    if isinstance(x, np.ndarray):
+        return NumericTensor(tensor)
+    return SymbolicTensor(tensor)
+
+
+def tensor_multiplication_on_arrays(x, y, dim_x, dim_y):
+    """
+    Given two arrays x, y, interprets them as Tensors and computes the tensor product x*y.
+    :param x: First array (numpy or sympy)
+    :param y: Second array (numpy or sympy)
+    :param dim_x: The dimension of the underlying vector space of x (the dimension of its first component)
+    :param dim_y: The dimension of the underlying vector space of y (the dimension of its first component)
+    :return: The tensor product x*y, again in array form
+    """
+    return (array_to_tensor(x, dim_x) * array_to_tensor(y, dim_y)).to_array()
+
+
+def extend_path(x, N, x_init=None):
+    """
+    Given a path x, computes its signature path, i.e. the rough path associated to x.
+    :param x: The path
+    :param N: The level of the signature
+    :param x_init: If True, computes x[0] * S(x)_{0,j}. If False, computes S(x)_{0,j}. If instance of Tensor,
+        computes x_init * S(x)_{0,j}
+    :return: The extended path, instance of a list of NumericTensor
+    """
+    length = x.shape[0]
+    dim = x.shape[1]
+    S_x = [trivial_sig_num(dim, N) for _ in range(length)]
+    if isinstance(x_init, SymbolicTensor):
+        S_x[0] = x_init.to_numeric_tensor().project(N)
+    elif isinstance(x_init, NumericTensor):
+        S_x[0] = x_init.project(N)
+    elif x_init:
+        S_x[0][1] = x[0, :]
+    for i in range(1, length):
+        S_x[i][1] = x[i, :] - x[i-1, :]
+        S_x[i] = S_x[i-1] * S_x[i]
+    return S_x

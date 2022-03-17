@@ -67,6 +67,13 @@ class VectorField:
 
         return compute_vf_and_norm
 
+    def extend(self, level_y):
+        """
+        Extends a vector field to a full vector field.
+        :return: The full vector field
+        """
+        return VectorField(self.f, norm=self.norm)
+
 
 class VectorFieldNumeric(VectorField):
     def __init__(self, f, h=1e-06, norm=ta.l1):
@@ -104,6 +111,26 @@ class VectorFieldNumeric(VectorField):
             result += (self.derivative(y + self.h / 2 * direction, dx[i, ...])
                        - self.derivative(y - self.h / 2 * direction, dx[i, ...])) / self.h
         return result
+
+    def extend(self, level_y):
+        """
+        Extends a vector field to a full vector field.
+        :param dim_y: The dimension of the input/output of the vector field
+        :return: The full vector field
+        """
+        dim_y = self.f[0].shape[0]
+
+        def f(y, x):
+            """
+            The (first/zeroth derivative of the) extended vector field.
+            :param y:
+            :param x:
+            :return:
+            """
+            y_tens = ta.array_to_tensor(y, dim_y)
+            fyx = ta.tensor_algebra_embedding(self.f[0](y_tens[1], x), y_tens.n_levels())
+            return (y_tens * fyx).to_array()
+        return VectorFieldNumeric(f=[f], h=self.h, norm=self.norm)
 
 
 class VectorFieldSymbolic(VectorField):
@@ -161,3 +188,26 @@ class VectorFieldSymbolic(VectorField):
         while len(self.f) < deg:
             self.new_derivative()
         return super().vector_field(ls, compute_norm)
+
+    def extend(self, level_y):
+        """
+        Extends a vector field to a full vector field.
+        :return: The full vector field
+        """
+        dim_x = self.f[0].shape[1]
+        dim_y = self.f[0].shape[0]
+        if dim_y == 1:
+            n_new_vars = level_y
+        else:
+            n_new_vars = (dim_y**(level_y+1)-1)/(dim_y-1) - dim_y
+        new_vars = list(sp.symbols('a0:%d'%n_new_vars))
+        if dim_y == 1 and level_y == 2:
+            vars = [new_vars[0]] + self.variables + [new_vars[1]]
+        else:
+            vars = [new_vars[0]] + self.variables + new_vars[1:]
+
+        y_tens = ta.array_to_tensor(sp.Array(vars), dim_y)
+        f = sp.zeros(len(vars), dim_x)
+        for i in range(dim_x):
+            f[:, i] = (y_tens * ta.tensor_algebra_embedding(self.f[0][i], level_y)).to_array()
+        return VectorFieldSymbolic(f=[f], norm=self.norm, variables=vars)

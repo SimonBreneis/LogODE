@@ -428,3 +428,20 @@ class RoughPathSymbolic(RoughPath):
         x_s = self.eval_path(s, N)
         x_t = self.eval_path(t, N)
         return x_s.inverse() * x_t
+
+
+class RoughPathPrefactor(RoughPath):
+    def __init__(self, rp, pref):
+        super().__init__(p=rp.p, var_steps=rp.var_steps, norm=rp.norm)
+        self.rp = rp
+        self.pref = pref
+
+    def sig(self, s, t, N):
+        """
+        Returns the signature up to level N of the rough path on the interval [s,t].
+        :param s: Initial time point
+        :param t: Final time point
+        :param N: Level of the signature
+        :return: The signature up to level N on [s,t]
+        """
+        return self.pref.project(N) * self.rp(s, t, N)

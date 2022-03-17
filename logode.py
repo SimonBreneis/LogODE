@@ -5,6 +5,7 @@ import scipy
 from scipy import integrate, special
 import roughpath as rp
 import vectorfield as vf
+import tensoralgebra as ta
 
 
 def log_linear_regression(x, y):
@@ -36,12 +37,18 @@ class LogODESolver:
         Initialization.
         :param x: Driving rough path, instance of RoughPath
         :param f: Vector field, instance of VectorField
-        :param y_0: Initial condition, instance of numpy.ndarray
+        :param y_0: Initial condition, instance of numpy.ndarray or Tensor
         :param method: Method used in the ODE solver (see scipy.integrate.ivp)
         """
         self.x = x
         self.f = f
-        self.y_0 = y_0
+        self.f_full = f.extend()
+        if isinstance(y_0, ta.Tensor):
+            self.y_0 = y_0[1]
+            self.y_0_full = y_0
+        else:
+            self.y_0 = y_0
+            self.y_0_full = ta.sig_first_level_num(y_0, 1)
         self.method = method
         self.dim = self.x.sig(0., 0., 1).dim()  # Dimension of the underlying rough path x
 
@@ -57,13 +64,21 @@ class LogODESolver:
         :param compute_bound: If True, also returns a theoretical error bound
         :return: Solution on partition points
         """
-        if compute_bound:
-            self.f.reset_local_norm()
         ls = self.x.logsig(s, t, N)
-        y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls, compute_bound)(z), (0, 1), y_s, method=self.method,
-                                atol=atol, rtol=rtol).y[:, -1]
-        if compute_bound:
-            return y, self.f.local_norm, self.x.omega(s, t)
+        if isinstance(y_s, ta.Tensor):
+            if compute_bound:
+                self.f_full.reset_local_norm()
+            y = integrate.solve_ivp(lambda t, z: self.f_full.vector_field(ls, compute_bound)(z), (0, 1), y_s.to_array(),
+                                    method=self.method, atol=atol, rtol=rtol).y[:, -1]
+            if compute_bound:
+                return y, self.f_full.local_norm, self.x.omega(s, t)
+        else:
+            if compute_bound:
+                self.f.reset_local_norm()
+            y = integrate.solve_ivp(lambda t, z: self.f.vector_field(ls, compute_bound)(z), (0, 1), y_s,
+                                    method=self.method, atol=atol, rtol=rtol).y[:, -1]
+            if compute_bound:
+                return y, self.f.local_norm, self.x.omega(s, t)
         return y
 
     def solve_fixed(self, N, partition, atol, rtol, compute_bound=False):
@@ -99,6 +114,88 @@ class LogODESolver:
             return y, self.local_log_ode_error_constant(N) * error_estimate
         return y
 
+    def solve_fixed_full_alt(self, N, partition, atol, rtol, compute_bound=False, y_0=None, N_sol=None):
+        """
+        Implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
+        :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+        :param partition: Partition of the interval on which we apply the Log-ODE method
+        :param atol: Absolute error tolerance of the ODE solver
+        :param rtol: Relative error tolerance of the ODE solver
+        :param compute_bound: If True, also returns a theoretical error bound
+        :param y_0: Tensor. If specified, uses y_0 as an initial condition
+        :param N_sol: The level up to which the full solution should be computed. If None, but y_0 is specified, takes
+            the level of y_0. If both N_sol and y_0 are None, takes N, the degree of the Log-ODE method
+        :return: Solution on partition points, error bound (-1 if no norm was specified)
+        """
+        if N_sol is None:
+            if y_0 is None:
+                N_sol = N
+            else:
+                N_sol = y_0.n_levels()
+        if y_0 is None:
+            y_0 = ta.trivial_sig_num(len(self.y_0), N_sol)
+            y_0[1] = self.y_0
+        else:
+            self.y_0 = y_0[1]
+        y = self.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=compute_bound)
+        rp_y = rp.RoughPathDiscrete(times=partition, values=y, p=self.x.p, var_steps=self.x.var_steps, norm=self.x.norm)
+        return rp.RoughPathPrefactor(rp_y, y_0)
+
+    def solve_fixed_full(self, N, partition, atol, rtol, compute_bound=False, y_0=None, N_sol=None):
+        """
+        Implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
+        :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+        :param partition: Partition of the interval on which we apply the Log-ODE method
+        :param atol: Absolute error tolerance of the ODE solver
+        :param rtol: Relative error tolerance of the ODE solver
+        :param compute_bound: If True, also returns a theoretical error bound
+        :param y_0: Tensor. If specified, uses y_0 as an initial condition
+        :param N_sol: The level up to which the full solution should be computed. If None, but y_0 is specified, takes
+            the level of y_0. If both N_sol and y_0 are None, takes N, the degree of the Log-ODE method
+        :return: Solution on partition points, error bound (-1 if no norm was specified)
+        """
+        if N_sol is None:
+            if y_0 is None:
+                N_sol = N
+            else:
+                N_sol = y_0.n_levels()
+        if y_0 is None:
+            y_0 = ta.trivial_sig_num(len(self.y_0), N_sol)
+            y_0[1] = self.y_0
+        else:
+            self.y_0 = y_0[1]
+
+        y = np.zeros(shape=(len(self.y_0), len(partition)))
+        y[:, 0] = self.y_0
+        p = self.x.p
+
+        error_estimate = 0.
+        tic = time.perf_counter()
+        last_time = tic
+        for i in range(1, len(partition)):
+            toc = time.perf_counter()
+            if toc - last_time > 10:
+                print(
+                    f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
+                last_time = toc
+            if compute_bound:
+                y[:, i], vf_norm, omega = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol,
+                                                          compute_bound)
+                vf_norm = np.amax(np.array(vf_norm)[:N])
+                error_estimate += vf_norm ** (N + 1) * omega ** ((N + 1) / p)
+            else:
+                y[:, i] = self.solve_step(y[:, i - 1], partition[i - 1], partition[i], N, atol, rtol, compute_bound)
+        if compute_bound:
+            return y, self.local_log_ode_error_constant(N) * error_estimate
+        return y
+
+
+        y = self.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=compute_bound)
+        return ta.extend_path(y, N_sol, y_0)
+
+
+
+
     def local_log_ode_error_constant(self, N):
         """
         Returns the constant in the error bound for a single step of the Log-ODE method.
@@ -126,7 +223,7 @@ class LogODESolver:
         return (1.13 / beta) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(
             int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
-    def solve_adaptive_faster(self, T, atol=1e-03, rtol=1e-02, N_min=1, N_max=5, n_min=30, n_max=100):
+    def solve_adaptive_faster(self, T, atol=1e-03, rtol=1e-02, N_min=3, N_max=5, n_min=30, n_max=100):
         atol = atol/2
         rtol = rtol/2
         if isinstance(self.x, rp.RoughPathExact):

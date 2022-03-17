@@ -15,6 +15,13 @@ import tensoralgebra as ta
 from fbm import FBM
 
 
+vals, n = ex.asymmetric_Brownian_path(500, 1)
+plt.plot(np.linspace(0, 1, n+1), vals)
+plt.show()
+
+ex.discussion(example=5.5, show=False, save=True, sym_path=True, sym_vf=True)
+time.sleep(360000)
+
 # Sanity check
 t = sp.symbols('t')
 path = sp.Array([sp.cos(2 * 4 * sp.pi * t) / sp.sqrt(4), sp.sin(2 * 4 * sp.pi * t) / sp.sqrt(4)])
@@ -34,16 +41,17 @@ vec_field_ = vf.VectorFieldNumeric(f=[f], h=1e-07, norm=ta.l1)
 print(vec_field.vector_field(x.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
 print(vec_field_.vector_field(x_.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
 
-
+ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
+time.sleep(360000)
+ex.discussion(example=1.02785, show=False, save=True, sym_path=True, sym_vf=True)
+time.sleep(360000)
+ex.third_level(N=0, plot=False, sig_steps=10000, atol=1e-06, rtol=1e-05, sym_path=False, sym_vf=True, param=1000)
+time.sleep(360000)
 ex.discussion(example=2.01562, show=False, save=True, sym_path=True, sym_vf=True)
 time.sleep(360000)
 ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
 time.sleep(360000)
 ex.third_level(N=0, plot=False, sig_steps=2000, sym_path=True, sym_vf=True, param=64, atol=1e-06, rtol=1e-05)
-time.sleep(360000)
-ex.discussion(example=0.1, show=False, save=True, sym_path=False, sym_vf=True)
-time.sleep(360000)
-ex.discussion(example=0.2, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(360000)
 ex.discussion(example=0.3, show=False, save=True, sym_path=False, sym_vf=True)
 time.sleep(360000)

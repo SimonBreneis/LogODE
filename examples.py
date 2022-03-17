@@ -22,7 +22,7 @@ def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.
     :param var_steps: Number of steps used in approximating p-variation
     :param norm: Norm for computing p-variation
     :param save_level: Level up to which the signatures on the time grid are stored
-    :return: An instance of a RoughPathDiscrete
+    :return: An instance of a RoughPath
     """
     if p == 0.:
         p = 1 / H + 0.05
@@ -33,6 +33,93 @@ def rough_fractional_Brownian_path(H, n, dim, T=1., p=0., var_steps=15, norm=ta.
     f = fbm.FBM(n=n, hurst=H, length=T)
     times = fbm.times(n=n, length=T)
     values = np.array([f.fbm() for _ in range(dim)])
+    if save_level <= 5:
+        return rp.RoughPathDiscrete(times=times, values=values.T, p=p, var_steps=var_steps, norm=norm,
+                                    save_level=save_level)
+    return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=-1),
+                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
+
+
+def rough_fractional_Brownian_path_time(H, n, dim, T=1., p=0., var_steps=15, norm=ta.l1, save_level=0):
+    """
+    Returns a sample path of fractional Brownian motion together with a time component as an instance of a RoughPath.
+    Time is the first component.
+    :param H: Hurst parameter
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param p: Parameter in which the roughness should be measured (default choice 1/H + 0.05)
+    :param var_steps: Number of steps used in approximating p-variation
+    :param norm: Norm for computing p-variation
+    :param save_level: Level up to which the signatures on the time grid are stored
+    :return: An instance of a RoughPath
+    """
+    if p == 0.:
+        p = 1 / H + 0.05
+        if p - int(p) > 0.95:
+            p = np.ceil(p)
+    if save_level == 0:
+        save_level = int(np.ceil(p))
+    f = fbm.FBM(n=n, hurst=H, length=T)
+    times = fbm.times(n=n, length=T)
+    values = np.array([times] + [f.fbm() for _ in range(dim)])
+    if save_level <= 5:
+        return rp.RoughPathDiscrete(times=times, values=values.T, p=p, var_steps=var_steps, norm=norm,
+                                    save_level=save_level)
+    return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=-1),
+                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
+
+
+def asymmetric_Brownian_path(n, T=1., q=0.5):
+    """
+    Returns a sample path of an asymmetric Brownian motion.
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param q: Probability of reflecting a negative area
+    :return: An instance of a RoughPath
+    """
+    n = int(2**(int(np.ceil(np.log2(n)))))
+    log_n = int(np.round(np.log2(n)))
+    values = np.empty(n+1)
+    values[0] = 0
+    values[1] = np.random.normal(0, np.sqrt(T))
+    n_step = n
+    for i in range(1, log_n+1):
+        n_step = int(n_step/2)
+        for j in range(int(2**(i-1))):
+            bridge = np.random.normal(0, np.sqrt(T)/2**i)
+            if bridge < 0:
+                if np.random.random(1) > q:
+                    bridge = -bridge
+            values[n_step*(2*j+1)] = (values[n_step*2*j] + values[n_step*2*(j+1)])/2 + bridge
+    return values, n
+
+
+def rough_asymmetric_Brownian_path_time(n, dim, T=1., q=0.5, p=0., var_steps=15, norm=ta.l1, save_level=0):
+    """
+    Returns a sample path of an asymmetric Brownian motion as an instance of a RoughPath.
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param q: Probability of reflecting a negative area
+    :param p: Parameter in which the roughness should be measured (default choice 1/H + 0.05)
+    :param var_steps: Number of steps used in approximating p-variation
+    :param norm: Norm for computing p-variation
+    :param save_level: Level up to which the signatures on the time grid are stored
+    :return: An instance of a RoughPath
+    """
+    if p == 0.:
+        p = 2.05
+    if save_level == 0:
+        save_level = int(np.ceil(p))
+    val, n = asymmetric_Brownian_path(n, T, q)
+    times = np.linspace(0, T, n+1)
+    values = np.empty((dim+1, n+1))
+    values[1, :] = val
+    for i in range(2, dim+1):
+        values[i, :] = asymmetric_Brownian_path(n, T, q)[0]
+    values[0, :] = times
     if save_level <= 5:
         return rp.RoughPathDiscrete(times=times, values=values.T, p=p, var_steps=var_steps, norm=norm,
                                     save_level=save_level)
@@ -319,23 +406,26 @@ def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, 
     if sym_path:
         param = sp.Integer(param)
         t = sp.symbols('t')
-        path = sp.Array([sp.cos(20 * t), sp.sinh(2*t-1)])/10
+        path = sp.Array([sp.cos(sp.Integer(20) * t), sp.sinh(t-sp.Rational(1, 2))])
         x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
+        for _ in range(2, N+1):
+            x.new_level()
     else:
         path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sin(2 * np.pi * param * t)]) / np.sqrt(param)
         x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     if sym_vf:
-        y, z = sp.symbols('y z')
-        # f = sp.Array([[y-z, 2*y-z], [y+z, y+2*z]])
-        f = sp.Array([[y+z, y+2*z], [3*y, 6*y-z]])
-        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+        a, b, c = sp.symbols('a b c')
+        f = sp.Array([[a+b, a], [b, b+c], [c, c]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[a, b, c])
+        for _ in range(2, N+1):
+            vec_field.new_derivative()
     else:
         f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                                    1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
 
-    y_0 = np.array([1., 1.])
+    y_0 = np.array([1., 1., 1.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
     if N < 1:
@@ -381,6 +471,9 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         path = sp.Array(
             [sp.cos(2 * param * sp.pi * t) / sp.sqrt(param), sp.sin(2 * param * sp.pi * t) / sp.sqrt(param)])
         x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
+        if N > 1:
+            for _ in range(1, N):
+                x.new_level()
     else:
         path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sin(2 * np.pi * param * t)]) / np.sqrt(param)
         x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
@@ -389,6 +482,9 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         y, z = sp.symbols('y z')
         f = sp.Array([[z - y, -z], [1 / (1 + sp.exp(-z)), 1 / (1 + sp.exp(-(y - 2 * z)))]])
         vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
     else:
         f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                                    1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(y[0] - 2 * y[1])) * x[1]])
@@ -575,11 +671,73 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
     y_0 = np.array([0., 0.])
     solver = lo.LogODESolver(x, vec_field, y_0, method=method)
     tic = time.perf_counter()
-    solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
+    if N < 1:
+        return solution, toc - tic
+    return solution, error_bound, toc - tic
+
+
+def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
+    """
+    Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
+    motion. The driving path is 2-dimensional, the solution is 2-dimensional.
+    :param n: Number of intervals
+    :param N: Degree of the Log-ODE method
+    :param param: Either Hurst parameter of the driving path, or a fBm given as a rough path
+    :param plot: If true, plots the entire path. If false, does not plot anything
+    :param sig_steps: Number of (equidistant) steps used in the approximation of the signature of x
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
+        numerically
+    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
+        numerically
+    :return: The entire path, an error bound, and the time
+    """
+
+    var_steps = 15
+    norm = ta.l1
+    method = 'RK45'
+    partition = np.linspace(0, 1, n + 1)
+    h = 1e-07
+
+    if isinstance(param, rp.RoughPath):
+        x = param
+        p = x.p
+    else:
+        p = 1 / param + 0.1
+        x = rough_fractional_Brownian_path_time(H=param, n=n * sig_steps, dim=2, T=1., p=p, var_steps=var_steps, norm=norm,
+                                           save_level=N)
+
+    if sym_vf:
+        y, z = sp.symbols('y z')
+        f = sp.Array([[-4*y*(y**2-z), 1, 0], [2*(y**2-z), 0, 1]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+    else:
+        f = lambda y, x: np.array([(-4*y[0]*(y[0]**2-y[1])) * x[0] + x[1],
+                                   2*(y[0]**2-y[1]) * x[0] + x[2]])
+        vec_field = vf.VectorFieldNumeric(f=[f], h=h, norm=norm)
+
+    y_0 = np.array([0., 0.])
+    solver = lo.LogODESolver(x, vec_field, y_0, method=method)
+    tic = time.perf_counter()
+    if N < 1:
+        solution = solver.solve_adaptive_faster(T=1., atol=atol, rtol=rtol)
+    else:
+        solution, error_bound = solver.solve_fixed(N=N, partition=partition, atol=atol, rtol=rtol, compute_bound=True)
+    toc = time.perf_counter()
+    if plot:
+        plt.plot(solution[0, :], solution[1, :])
+        plt.show()
+    if N < 1:
+        return solution, toc - tic
     return solution, error_bound, toc - tic
 
 
@@ -615,7 +773,7 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         kind = nilpotent_vf
         description = 'nilpotent vector field'
         if sym_vf:
-            N = np.array([1, 2])
+            N = np.array([1, 2, 3])
         else:
             N = np.array([1, 2, 3])
         n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398])
@@ -624,7 +782,7 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         ref_N = N[-1]
         norm = ta.l1
         p = 1
-        sol_dim = 2
+        sol_dim = 3
         ref_sym_path = True
         ref_sym_vf = True
     elif 0 < example < 1:
@@ -711,6 +869,26 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         ref_N = N[-1]
         ref_sym_path = False
         ref_sym_vf = True
+    elif 5 <= example <= 6:
+        kind = langevin_banana
+        description = f'Langevin with banana potential, q={example-5}'
+        var_steps = 15
+        norm = ta.l1
+        n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000])
+        sig_steps = np.array([2000])
+        if sym_vf:
+            N = np.array([1, 2, 3, 4])
+        else:
+            N = np.array([1, 2, 3])
+        sol_dim = 2
+        ref_n = int(n[-1] * 4)
+        ref_N = N[-1]
+        ref_sym_path = False
+        ref_sym_vf = True
+        param = rough_asymmetric_Brownian_path_time(q=example-5, n=ref_n * int(sig_steps[-1]), dim=2, T=10.,
+                                               var_steps=var_steps, norm=norm, save_level=ref_N)
+        print('Constructed')
+        p = param.p
     else:
         return
 
