@@ -201,7 +201,8 @@ def compare_N(N, n, sig_steps, errors, error_bounds, times, description, x_time=
         for i in range(len(N)):
             c = color[int(i % 7)]
             ax1.loglog(n, errors[i, :], c + '-', label=f'N={N[i]}')
-            ax1.loglog(n, error_bounds[i, :], c + '--')
+            if error_bounds is not None:
+                ax1.loglog(n, error_bounds[i, :], c + '--')
             ax2.loglog(n, times[i, :], c + '+-')
 
     ax1.legend(loc='best')
@@ -268,18 +269,19 @@ def compare_n(N, n, sig_steps, errors, error_bounds, times, description, regress
     ax2.set_ylabel('Time (s)')  # we already handled the x-label with ax1
 
     ax1.loglog(n, errors, color='r', label='True error')
-    ax1.loglog(n, error_bounds, color='g', label='Error bound')
+    if error_bounds is not None:
+        ax1.loglog(n, error_bounds, color='g', label='Error bound')
     reg_index = np.sum(n < np.ones(len(n)) * 35)
     if regression:
         power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], errors[reg_index:])
         ax1.loglog(n, constant * n ** power, 'r--')
         x_label += '\n\nError ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
             '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
-
-        power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], error_bounds[reg_index:])
-        ax1.loglog(n, constant * n ** power, 'g--')
-        x_label += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
-            '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
+        if error_bounds is not None:
+            power, constant, r_value, p_value, std_err = log_linear_regression(n[reg_index:], error_bounds[reg_index:])
+            ax1.loglog(n, constant * n ** power, 'g--')
+            x_label += ',  Bound ' + r'$\approx$' + f' {constant:.3g}' + r'$x^{{{}}}$'.format(
+                '{:.3g}'.format(power)) + '  ' + r'$(R=$' + f'{r_value:.3g}' + r'$)$'
 
     ax2.loglog(n, times, color='b', label='Time')
     if regression:
@@ -378,7 +380,8 @@ def compare_sig_steps(N, n, sig_steps, errors, times, description, regression=Tr
         plt.savefig(directory + '/' + description + ', ' + filename, format='pdf')
 
 
-def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
+def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+                 N_sol=2, param=4):
     """
     Uses a nilpotent linear vector field. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -393,6 +396,9 @@ def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, 
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
     p = 1
@@ -426,21 +432,29 @@ def nilpotent_vf(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, 
 
     y_0 = np.array([1., 1., 1.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
     if plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc-tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
+def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+                N_sol=2, param=4):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -455,6 +469,9 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
     p = 1
@@ -491,21 +508,29 @@ def smooth_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
-    if plot:
+    if full == 0 and plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc-tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=None):
+def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+              N_sol=2, param=None):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is pure area. The driving path
     is 2-dimensional, the solution is 2-dimensional.
@@ -520,6 +545,9 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
     p = 2
@@ -544,21 +572,29 @@ def pure_area(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
-    if plot:
+    if full == 0 and plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc-tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=4):
+def third_level(n=100, N=3, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+                N_sol=3, param=4):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is smooth, and essentially
     k times the (rescaled) unit circle. The driving path is 3-dimensional, the solution is 2-dimensional.
@@ -573,6 +609,9 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
     p = 1
@@ -612,21 +651,29 @@ def third_level(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, s
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
-    if plot:
+    if full == 0 and plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc-tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
+def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+             N_sol=2, param=0.5):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
     motion. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -641,6 +688,9 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
 
@@ -669,21 +719,29 @@ def fBm_path(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
-    if plot:
+    if full == 0 and plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc - tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, param=0.5):
+def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-06, sym_path=False, sym_vf=False, full=0,
+                    N_sol=2, param=0.5):
     """
     Uses a smooth vector field that consists of a linear and a C^infinity part. The path is a fractional Brownian
     motion. The driving path is 2-dimensional, the solution is 2-dimensional.
@@ -698,6 +756,9 @@ def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-0
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
 
@@ -726,21 +787,29 @@ def langevin_banana(n=100, N=2, plot=False, sig_steps=100, atol=1e-09, rtol=1e-0
 
     y_0 = np.array([0., 0.])
     tic = time.perf_counter()
-    if N < 1:
-        solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
-    else:
-        solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                               method=method, compute_bound=True)
+    if full == 0:
+        if N < 1:
+            solution = lo.solve_adaptive_faster(x, vec_field, y_0, T=1., atol=atol, rtol=rtol, method=method)
+        else:
+            solution, error_bound = lo.solve_fixed(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                   method=method, compute_bound=True)
+    elif full == 1:
+        solution = lo.solve_fixed_full(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                       compute_bound=False, N_sol=N_sol)
+    elif full == 2:
+        solution = lo.solve_fixed_full_alt(x, vec_field, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                           method=method, compute_bound=False, N_sol=N_sol)
     toc = time.perf_counter()
-    if plot:
+    if full == 0 and plot:
         plt.plot(solution[0, :], solution[1, :])
         plt.show()
-    if N < 1:
-        return solution, toc - tic
-    return solution, error_bound, toc - tic
+    if full == 0 and N >= 1:
+        return solution, error_bound, toc - tic
+    return solution, toc-tic
 
 
-def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False):
+def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sym_path=False, sym_vf=False, full=0,
+               N_sol=2):
     """
     Discusses the problem in smooth_vf_smooth_path.
     :param example: Float that chooses the example that is discussed.
@@ -757,9 +826,13 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         numerically
     :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
         numerically
+    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
+        the inaccurate but faster algorithm
+    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: The entire path, an error bound, and the time
     """
     # 10000, 15849, 25119, 39811, 63096, 100000
+    T = 1.
     if adaptive_tol:
         atol = 1e-05
         rtol = 1e-02
@@ -906,54 +979,147 @@ def discussion(example, show=False, save=False, rounds=1, adaptive_tol=False, sy
         atol_ = atol
         rtol_ = rtol
     true_sol, _, _ = kind(n=ref_n, N=ref_N, param=param, plot=False, atol=atol_, rtol=rtol_,
-                          sym_path=ref_sym_path, sym_vf=ref_sym_vf)
-    plt.plot(true_sol[0, :], true_sol[1, :])
-    plt.title('Solution for ' + description)
-    if show and sol_dim == 2:
-        plt.show()
-    if save and sol_dim == 2:
-        plt.savefig(directory + '/' + description[0].upper() + description[1:] + ', solution', format='pdf')
-    true_sol = true_sol[:, -1]
+                          sym_path=ref_sym_path, sym_vf=ref_sym_vf, full=full, N_sol=N_sol)
+    if full == 0 and N >= 1:
+        plt.plot(true_sol[0, :], true_sol[1, :])
+        plt.title('Solution for ' + description)
+        if show and sol_dim == 2:
+            plt.show()
+        if save and sol_dim == 2:
+            plt.savefig(directory + '/' + description[0].upper() + description[1:] + ', solution', format='pdf')
+        true_sol = true_sol[:, -1]
 
-    # true_sol = np.array([-0.95972823, -0.97375321]) (smooth, k=4)
-    # true_sol = np.array([-1.18830677, -0.74708976]) (oscillatory, k=25)
-    # true_sol = np.array([-1.23253942, -0.70746147]) (oscillatory, k=36)
-    # true_sol = np.array([-1.60472409, -0.46299073]) (pure area)
-    print(f'The final value for the problem ' + description + f' is {true_sol}.')
+        # true_sol = np.array([-0.95972823, -0.97375321]) (smooth, k=4)
+        # true_sol = np.array([-1.18830677, -0.74708976]) (oscillatory, k=25)
+        # true_sol = np.array([-1.23253942, -0.70746147]) (oscillatory, k=36)
+        # true_sol = np.array([-1.60472409, -0.46299073]) (pure area)
+        print(f'The final value for the problem ' + description + f' is {true_sol}.')
 
-    for i in range(len(N)):
-        for j in range(len(n)):
-            if adaptive_tol:
-                atol_ = atol * n[j] ** (-N[i] / float(p))
-                rtol_ = rtol * n[j] ** (-N[i] / float(p))
-            else:
-                atol_ = atol
-                rtol_ = rtol
-            for l in range(len(sig_steps)):
-                print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
-                for _ in range(rounds):
-                    sol, err, tim = kind(n=n[j], N=N[i], param=param, plot=False, sig_steps=sig_steps[l],
-                                         atol=atol_, rtol=rtol_, sym_path=sym_path, sym_vf=sym_vf)
-                    solutions[i, j, l, :] = sol[:, -1]
-                    error_bounds[i, j, l] = err
-                    times[i, j, l] += tim
-                    true_errors[i, j, l] = norm(sol[:, -1] - true_sol)
-                times[i, j, l] /= rounds
+        for i in range(len(N)):
+            for j in range(len(n)):
+                if adaptive_tol:
+                    atol_ = atol * n[j] ** (-N[i] / float(p))
+                    rtol_ = rtol * n[j] ** (-N[i] / float(p))
+                else:
+                    atol_ = atol
+                    rtol_ = rtol
+                for l in range(len(sig_steps)):
+                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
+                    for _ in range(rounds):
+                        sol, err, tim = kind(n=n[j], N=N[i], param=param, plot=False, sig_steps=sig_steps[l],
+                                             atol=atol_, rtol=rtol_, sym_path=sym_path, sym_vf=sym_vf, full=full,
+                                             N_sol=N_sol)
+                        solutions[i, j, l, :] = sol[:, -1]
+                        error_bounds[i, j, l] = err
+                        times[i, j, l] += tim
+                        true_errors[i, j, l] = norm(sol[:, -1] - true_sol)
+                    times[i, j, l] /= rounds
 
-            if len(sig_steps) > 1:
-                compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :],
-                                  description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-        if len(n) > 1:
-            for l in range(len(sig_steps)):
-                compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], error_bounds[i, :, l], times[i, :, l],
-                          description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-    if len(N) > 1:
-        compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
-                  False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-        compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
-                  True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-        if len(sig_steps) > 4:
-            compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+                if len(sig_steps) > 1:
+                    compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :],
+                                      description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            if len(n) > 1:
+                for l in range(len(sig_steps)):
+                    compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], error_bounds[i, :, l], times[i, :, l],
+                              description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        if len(N) > 1:
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
                       False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-            compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
                       True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            if len(sig_steps) > 4:
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+                          False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
+                          True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+    elif full == 0 and N < 1:
+        true_sol = true_sol[:, -1]
+
+        # true_sol = np.array([-0.95972823, -0.97375321]) (smooth, k=4)
+        # true_sol = np.array([-1.18830677, -0.74708976]) (oscillatory, k=25)
+        # true_sol = np.array([-1.23253942, -0.70746147]) (oscillatory, k=36)
+        # true_sol = np.array([-1.60472409, -0.46299073]) (pure area)
+        print(f'The final value for the problem ' + description + f' is {true_sol}.')
+
+        for i in range(len(N)):
+            for j in range(len(n)):
+                if adaptive_tol:
+                    atol_ = atol * n[j] ** (-N[i] / float(p))
+                    rtol_ = rtol * n[j] ** (-N[i] / float(p))
+                else:
+                    atol_ = atol
+                    rtol_ = rtol
+                for l in range(len(sig_steps)):
+                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
+                    for _ in range(rounds):
+                        sol, tim = kind(n=n[j], N=N[i], param=param, plot=False, sig_steps=sig_steps[l], atol=atol_,
+                                        rtol=rtol_, sym_path=sym_path, sym_vf=sym_vf, full=full, N_sol=N_sol)
+                        solutions[i, j, l, :] = sol[:, -1]
+                        times[i, j, l] += tim
+                        true_errors[i, j, l] = norm(sol[:, -1] - true_sol)
+                    times[i, j, l] /= rounds
+
+                if len(sig_steps) > 1:
+                    compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :],
+                                      description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf,
+                                      sym_path)
+            if len(n) > 1:
+                for l in range(len(sig_steps)):
+                    compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], None, times[i, :, l],
+                              description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        if len(N) > 1:
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], None, times[:, :, -1], description,
+                      False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], None, times[:, :, -1], description,
+                      True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            if len(sig_steps) > 4:
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], None, times[:, :, -3], description,
+                          False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], None, times[:, :, -3], description,
+                          True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+
+    elif full == 1 or full == 2:
+        true_sol = true_sol.sig(0, T).to_array()
+        solutions = np.zeros((len(N), len(n), len(sig_steps), len(true_sol)))
+
+        # true_sol = np.array([-0.95972823, -0.97375321]) (smooth, k=4)
+        # true_sol = np.array([-1.18830677, -0.74708976]) (oscillatory, k=25)
+        # true_sol = np.array([-1.23253942, -0.70746147]) (oscillatory, k=36)
+        # true_sol = np.array([-1.60472409, -0.46299073]) (pure area)
+        print(f'The final value for the problem ' + description + f' is {true_sol}.')
+
+        for i in range(len(N)):
+            for j in range(len(n)):
+                if adaptive_tol:
+                    atol_ = atol * n[j] ** (-N[i] / float(p))
+                    rtol_ = rtol * n[j] ** (-N[i] / float(p))
+                else:
+                    atol_ = atol
+                    rtol_ = rtol
+                for l in range(len(sig_steps)):
+                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
+                    for _ in range(rounds):
+                        sol, tim = kind(n=n[j], N=N[i], param=param, plot=False, sig_steps=sig_steps[l], atol=atol_,
+                                        rtol=rtol_, sym_path=sym_path, sym_vf=sym_vf, full=full, N_sol=N_sol)
+                        solutions[i, j, l, :] = sol[:, -1].sig(0, T).to_array()
+                        times[i, j, l] += tim
+                        true_errors[i, j, l] = norm(solutions[i, j, l, :] - true_sol)
+                    times[i, j, l] /= rounds
+
+                if len(sig_steps) > 1:
+                    compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :], description,
+                                      True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            if len(n) > 1:
+                for l in range(len(sig_steps)):
+                    compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], None, times[i, :, l],
+                              description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+        if len(N) > 1:
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], None, times[:, :, -1], description,
+                      False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], None, times[:, :, -1], description,
+                      True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+            if len(sig_steps) > 4:
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], None, times[:, :, -3], description,
+                          False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], None, times[:, :, -3], description,
+                          True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
