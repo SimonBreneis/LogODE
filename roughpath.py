@@ -445,3 +445,40 @@ class RoughPathPrefactor(RoughPath):
         :return: The signature up to level N on [s,t]
         """
         return self.pref.project(N) * self.rp(s, t, N)
+
+
+def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1):
+    """
+    Given the sequence X_{0, t_i} of (truncated) signatures of X for t_i in times, returns the corresponding RoughPath
+    object (an instance of RoughPathExact).
+    :param times: Time grid
+    :param path: The rough path, instance of list, path[i] = X_{0, times[i]}
+    :param sig_steps: Number of steps used in approximating the signature (if the level needed is higher than the
+            level given)
+    :param p: Roughness of the path
+    :param var_steps: Number of steps used in approximating the p-variation
+    :param norm: Norm used in computing the p-variation
+    :return: The path as an instance of RoughPathExact
+    """
+    def x_rp(s, t):
+        """
+        Computes X_{s, t}, with the same truncation level as in the input path.
+        :param s: Initial time point
+        :param t: Final time point
+        :return: The signature on [s,t]
+        """
+        if s > t:
+            return x_rp(t, s).inverse()
+        s_ind = np.sum(times < s)
+        t_ind = np.sum(times <= t) - 1
+        x_s = path[0]
+        if s_ind > 0:
+            ds = (s - times[s_ind - 1]) / (times[s_ind] - times[s_ind - 1])
+            x_s = path[s_ind - 1] * (path[s_ind-1].inverse()*path[s_ind])**ds
+        x_t = path[-1]
+        if t_ind < len(times) - 1:
+            dt = (t - times[t_ind]) / (times[t_ind + 1] - times[t_ind])
+            x_t = path[t_ind] * (path[t_ind].inverse() * path[t_ind+1])**dt
+        return x_s.inverse() * x_t
+
+    return RoughPathExact(path=x_rp, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)

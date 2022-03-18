@@ -68,6 +68,24 @@ class Tensor:
         """
         self.tensor[key] = value
 
+    def inhomogeneous_multiplication(self, alpha):
+        """
+        Multiplies the tensor with alpha inhomogeneously, i.e. the k-th level gets multiplied by alpha
+        (and not alpha^k).
+        :param alpha: The factor, instance of float
+        :return: The product, instance of Tensor
+        """
+        return Tensor([self[i]*alpha for i in range(self.n_levels()+1)])
+
+    def __pow__(self, power, modulo=None):
+        """
+        Only well-defined if self is a group-like element.
+        :param power:
+        :param modulo:
+        :return:
+        """
+        return self.log().inhomogeneous_multiplication(power).exp()
+
     def n_levels(self):
         """
         Returns the number of levels of the tensor.
@@ -219,6 +237,15 @@ class SymbolicTensor(Tensor):
         # assume other is scalar
         return SymbolicTensor([other * self[i] for i in range(len(self))])
 
+    def inhomogeneous_multiplication(self, alpha):
+        """
+        Multiplies the tensor with alpha inhomogeneously, i.e. the k-th level gets multiplied by alpha
+        (and not alpha^k).
+        :param alpha: The factor, instance of float
+        :return: The product, instance of SymbolicTensor
+        """
+        return SymbolicTensor([self[i]*alpha for i in range(self.n_levels()+1)])
+
     def project(self, N):
         if len(self) >= N+1:
             return SymbolicTensor([self.tensor[i] for i in range(N + 1)])
@@ -286,6 +313,15 @@ class NumericTensor(Tensor):
             return NumericTensor([np.sum(np.array([np.multiply.outer(x[j], y[i - j]) for j in range(i + 1)]), axis=0) for i in range(N + 1)])
         # assume other is scalar
         return NumericTensor([other * self.tensor[i] for i in range(len(self))])
+
+    def inhomogeneous_multiplication(self, alpha):
+        """
+        Multiplies the tensor with alpha inhomogeneously, i.e. the k-th level gets multiplied by alpha
+        (and not alpha^k).
+        :param alpha: The factor, instance of float
+        :return: The product, instance of NumericTensor
+        """
+        return NumericTensor([self[i]*alpha for i in range(self.n_levels()+1)])
 
     def project(self, N):
         if len(self) >= N+1:
@@ -458,27 +494,3 @@ def tensor_multiplication_on_arrays(x, y, dim_x, dim_y):
     :return: The tensor product x*y, again in array form
     """
     return (array_to_tensor(x, dim_x) * array_to_tensor(y, dim_y)).to_array()
-
-
-def extend_path(x, N, x_init=None):
-    """
-    Given a path x, computes its signature path, i.e. the rough path associated to x.
-    :param x: The path
-    :param N: The level of the signature
-    :param x_init: If True, computes x[0] * S(x)_{0,j}. If False, computes S(x)_{0,j}. If instance of Tensor,
-        computes x_init * S(x)_{0,j}
-    :return: The extended path, instance of a list of NumericTensor
-    """
-    length = x.shape[0]
-    dim = x.shape[1]
-    S_x = [trivial_sig_num(dim, N) for _ in range(length)]
-    if isinstance(x_init, SymbolicTensor):
-        S_x[0] = x_init.to_numeric_tensor().project(N)
-    elif isinstance(x_init, NumericTensor):
-        S_x[0] = x_init.project(N)
-    elif x_init:
-        S_x[0][1] = x[0, :]
-    for i in range(1, length):
-        S_x[i][1] = x[i, :] - x[i-1, :]
-        S_x[i] = S_x[i-1] * S_x[i]
-    return S_x

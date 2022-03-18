@@ -94,26 +94,79 @@ def solve_fixed(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_boun
     return y
 
 
-def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False):
+def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
     """
     Implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
     :param x: Rough path
-    :param f: Vector field
-    :param y_0: Initial condition
+    :param f: Vector field (non-extended!)
+    :param y_0: Initial condition (tensor or vector)
     :param N: The degree of the Log-ODE method (f needs to be Lip(N))
     :param partition: Partition of the interval on which we apply the Log-ODE method
     :param atol: Absolute error tolerance of the ODE solver
     :param rtol: Relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
     :param compute_bound: If True, also returns a theoretical error bound
+    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
     :return: Solution on partition points, error bound (-1 if no norm was specified)
     """
+    if N_sol is None:
+        if isinstance(y_0, ta.Tensor):
+            N_sol = y_0.n_levels()
+        else:
+            N_sol = N
+    if isinstance(y_0, np.ndarray):
+        y_0 = ta.tensor_algebra_embedding(y_0, N_sol).to_array()
+    f_full = f.extend(N_sol)
     if compute_bound:
-        y, error = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+        y, error = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                                compute_bound=compute_bound)
     else:
-        y = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+        y = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                         compute_bound=compute_bound)
+
+    sig_steps = 2000
+    if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
+        sig_steps = x.sig_steps
+    y_list = [ta.array_to_tensor(y[i, :], len(y_0[1])) for i in range(y.shape[0])]
+    rp_y = rp.rough_path_exact_from_exact_path(times=partition, path=y_list, sig_steps=sig_steps, p=x.p,
+                                               var_steps=x.var_steps, norm=x.norm)
+    y = rp.RoughPathPrefactor(rp_y, y_0)
+    if compute_bound:
+        return y, error
+    return y
+
+
+def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+    """
+    Half-assed implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
+    Really only solves the first level, and afterwards computes the signature. Faster, but in general (for p large)
+    incorrect.
+    :param x: Rough path
+    :param f: Vector field (non-extended!)
+    :param y_0: Initial condition (tensor or vector)
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param compute_bound: If True, also returns a theoretical error bound
+    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
+    :return: Solution on partition points, error bound (-1 if no norm was specified)
+    """
+    if N_sol is None:
+        if isinstance(y_0, ta.Tensor):
+            N_sol = y_0.n_levels()
+        else:
+            N_sol = N
+    if isinstance(y_0, np.ndarray):
+        y_0 = ta.tensor_algebra_embedding(y_0, N_sol).to_array()
+    if compute_bound:
+        y, error = solve_fixed(x, f, y_0[1], N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                               compute_bound=compute_bound)
+    else:
+        y = solve_fixed(x, f, y_0[1], N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                        compute_bound=compute_bound)
+
     rp_y = rp.RoughPathDiscrete(times=partition, values=y, p=x.p, var_steps=x.var_steps, norm=x.norm)
     y = rp.RoughPathPrefactor(rp_y, y_0)
     if compute_bound:
