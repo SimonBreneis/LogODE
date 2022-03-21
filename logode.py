@@ -166,6 +166,46 @@ def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', com
     return y, error
 
 
+def solve_fixed_adj_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+    """
+    Implementation of the Log-ODE method. Returns the full solution z = (x, y), i.e. the solution as a rough path.
+    :param x: Rough path
+    :param f: Vector field (non-extended!)
+    :param y_0: Initial condition (tensor or vector)
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param compute_bound: If True, also returns a theoretical error bound
+    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
+    :return: Solution on partition points, error bound (-1 if no norm was specified)
+    """
+    f_ext = f.adjoin()
+    return solve_fixed_full(x, f_ext, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
+
+
+def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+    """
+    Half-assed implementation of the Log-ODE method. Returns the full solution z = (x, y), i.e. the solution as a rough
+    path. Really only solves the first level, and afterwards computes the signature. Faster, but in general
+    (for p large) incorrect.
+    :param x: Rough path
+    :param f: Vector field (non-extended!)
+    :param y_0: Initial condition (tensor or vector)
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param compute_bound: If True, also returns a theoretical error bound
+    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
+    :return: Solution on partition points, error bound (-1 if no norm was specified)
+    """
+    f_ext = f.adjoin()
+    return solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
+
+
 def local_log_ode_error_constant(N, dim, p):
     """
     Returns the constant in the error bound for a single step of the Log-ODE method.

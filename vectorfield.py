@@ -72,11 +72,19 @@ class VectorField:
         Extends a vector field to a full vector field.
         :return: The full vector field
         """
-        return VectorField(self.f, norm=self.norm)
+        pass
+
+    def adjoin(self):
+        """
+        Extends the vector field f to f_ext so that instead of solving dy = f(y)dx, one solves dz = f_ext(z)dx,
+        where z = (x, y).
+        :return: The vector field which is used to solve for z = (x, y)
+        """
+        pass
 
 
 class VectorFieldNumeric(VectorField):
-    def __init__(self, f, dim_y, h=1e-06, norm=ta.l1):
+    def __init__(self, f, dim_x, dim_y, h=1e-06, norm=ta.l1):
         """
         Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -86,12 +94,14 @@ class VectorFieldNumeric(VectorField):
             as input the position vector y and the (i+1)-tensor dx^(i+1)
             If the derivatives are not specified, then f_vec[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
+        :param dim_x: Dimension of the driving path x
         :param dim_y: Dimension of the solution y (dimension of the output of f)
         :param h: Step size in numerical differentiation
         :param norm: Vector space norm used for estimating the norm of f
         """
         super().__init__(f, norm)
         self.h = h
+        self.dim_x = dim_x
         self.dim_y = dim_y
 
     def derivative(self, y, dx):
@@ -115,18 +125,13 @@ class VectorFieldNumeric(VectorField):
         return result
 
     def extend(self, level_y):
-        """
-        Extends a vector field to a full vector field.
-        :param level_y: The level to which to vector field should be extended (the level the solution should have)
-        :return: The full vector field
-        """
 
         def f(y, x):
             """
             The (first/zeroth derivative of the) extended vector field.
-            :param y:
-            :param x:
-            :return:
+            :param y: Current signature of the solution (in array form)
+            :param x: Log-signature of the driving path
+            :return: The vector field applied to the log-signature
             """
             y_tens = ta.array_to_tensor(y, self.dim_y)
             fyx = ta.tensor_algebra_embedding(self.f[0](y_tens[1], x), y_tens.n_levels())
@@ -137,6 +142,22 @@ class VectorFieldNumeric(VectorField):
         else:
             extended_dim = int(np.around((self.dim_y**(level_y+1) - 1)/(self.dim_y - 1)))
         return VectorFieldNumeric(f=[f], dim_y=extended_dim, h=self.h, norm=self.norm)
+
+    def adjoin(self):
+
+        def f(y, x):
+            """
+            The (first/zeroth derivative of the) vector field that adjoins the path x to the solution y
+            :param y: Current value of the solution
+            :param x: Log-signature of the driving path
+            :return: The vector field applied to the log-signature
+            """
+            result = np.empty(self.dim_x + self.dim_y)
+            result[:self.dim_x] = x
+            result[self.dim_x:] = self.f[0](y, x)
+            return result
+
+        return VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h, norm=self.norm)
 
 
 class VectorFieldSymbolic(VectorField):
@@ -156,6 +177,8 @@ class VectorFieldSymbolic(VectorField):
         super().__init__(f, norm)
         self.variables = variables
         self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
+        self.dim_x = self.f[0].shape[1]
+        self.dim_y = self.f[0].shape[0]
 
     def new_derivative(self):
         """
@@ -196,33 +219,34 @@ class VectorFieldSymbolic(VectorField):
         return super().vector_field(ls, compute_norm)
 
     def extend(self, level_y):
-        """
-        Extends a vector field to a full vector field.
-        :return: The full vector field
-        """
-        dim_x = self.f[0].shape[1]
-        dim_y = self.f[0].shape[0]
-        if dim_y == 1:
+        if self.dim_y == 1:
             n_new_vars = level_y
         else:
-            n_new_vars = (dim_y**(level_y+1)-1)/(dim_y-1) - dim_y
+            n_new_vars = (self.dim_y**(level_y+1)-1)/(self.dim_y-1) - self.dim_y
         new_vars = list(sp.symbols('a0:%d' % n_new_vars))
-        if dim_y == 1 and level_y == 2:
+        if self.dim_y == 1 and level_y == 2:
             variables = [new_vars[0]] + self.variables + [new_vars[1]]
         else:
             variables = [new_vars[0]] + self.variables + new_vars[1:]
 
-        y_tens = ta.array_to_tensor(sp.Array(variables), dim_y)
-        '''
-        f = [[0]*len(variables)]*dim_x
-        for i in range(dim_x):
-            f[i] = list((y_tens * ta.tensor_algebra_embedding(self.f[0][:, i], level_y)).to_array())
-        # f = sp.transpose(sp.Array(f))
-        '''
-        f = [[0]*dim_x for _ in range(len(variables))]
-        for i in range(dim_x):
+        y_tens = ta.array_to_tensor(sp.Array(variables), self.dim_y)
+        f = [[0]*self.dim_x for _ in range(len(variables))]
+        for i in range(self.dim_x):
             f_temp = list((y_tens * ta.tensor_algebra_embedding(self.f[0][:, i], level_y)).to_array())
             for j in range(len(variables)):
                 f[j][i] = f_temp[j]
         f = sp.Array(f)
         return VectorFieldSymbolic(f=[f], norm=self.norm, variables=variables)
+
+    def adjoin(self):
+        f = [[0]*self.dim_x for _ in range(self.dim_x + self.dim_y)]
+        for i in range(self.dim_x):
+            for j in range(self.dim_x):
+                if i == j:
+                    f[i][j] = 1
+        for i in range(self.dim_x, self.dim_x+self.dim_y):
+            for j in range(self.dim_x):
+                f[i][j] = self.f[0][i, j]
+        f = sp.Array(f)
+        new_vars = list(sp.symbols('b0:%d' % self.dim_x))
+        return VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
