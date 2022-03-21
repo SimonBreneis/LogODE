@@ -119,6 +119,57 @@ class Tensor:
         """
         pass
 
+    def project_lie(self):
+        """
+        Projects the Tensor onto the Lie group. Only works well for the first two, maybe three levels.
+        :return: The projected Tensor
+        """
+        new_tens = self.__copy__()
+        new_tens[0] = 1
+
+        if new_tens.n_levels() <= 1:
+            return new_tens
+
+        log_tens = new_tens.log()
+        for i in range(log_tens.dim()):
+            log_tens[2][i, i] = 0
+        for i in range(log_tens.dim()):
+            for j in range(i):
+                avg = (log_tens[2][i, j] - log_tens[2][j, i])/2
+                log_tens[2][i, j] = avg
+                log_tens[2][j, i] = -avg
+        if log_tens.n_levels() >= 3:
+            for i in range(log_tens.dim()):
+                log_tens[3][i, i, i] = 0
+                for j in range(i):
+                    avg = (log_tens[3][j, j, i] - log_tens[3][j, i, j] + log_tens[3][i, j, j])/4
+                    log_tens[3][j, j, i] = avg
+                    log_tens[3][j, i, j] = -2*avg
+                    log_tens[3][i, j, j] = avg
+
+                    avg = (log_tens[3][i, i, j] - log_tens[3][i, j, i] + log_tens[3][j, i, i])/4
+                    log_tens[3][i, i, j] = avg
+                    log_tens[3][i, j, i] = -2*avg
+                    log_tens[3][j, i, i] = avg
+
+                    for k in range(j):
+                        avg = (log_tens[3][k, j, i] + log_tens[3][i, j, k])/2
+                        log_tens[3][k, j, i] = avg
+                        log_tens[3][k, i, j] = -avg
+                        log_tens[3][j, i, k] = -avg
+                        log_tens[3][i, j, k] = avg
+
+                        avg = (- log_tens[3][i, k, j] - log_tens[3][j, k, i])/2
+                        log_tens[3][k, i, j] = log_tens[3][k, i, j] + avg
+                        log_tens[3][i, k, j] = -avg
+                        log_tens[3][j, k, i] = -avg
+                        log_tens[3][j, i, k] = log_tens[3][k, i, j] + avg
+
+        if log_tens.n_levels() >= 4:
+            for i in range(log_tens.dim()):
+                log_tens[4][i, i, i, i] = 0
+        return log_tens.exp()
+
     def dim(self):
         """
         Returns the dimension of the underlying vector space.
@@ -494,7 +545,7 @@ def sig(x, N):
     indices.insert(0, 0)
     res = [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * i) for i in range(N + 1)]
     res[0] = float(res[0])
-    return NumericTensor(res)
+    return NumericTensor(res).project_lie()
 
 
 def logsig(x, N):

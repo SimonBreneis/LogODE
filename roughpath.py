@@ -317,7 +317,7 @@ class RoughPathDiscrete(RoughPath):
             else:
                 inner = ta.sig(self.val[s_ind:(t_ind + 1), :], N)
             result = left * inner * right
-        return result
+        return result.project_lie()
 
     def project_space(self, indices):
         new_values = self.val[:, indices]
@@ -389,7 +389,7 @@ class RoughPathExact(RoughPath):
         result = self.path(s, times[1]).extend_sig(N)
         for i in range(1, self.sig_steps):
             result = result * self.path(times[i], times[i+1]).extend_sig(N)
-        return result
+        return result.project_lie()
 
     def exact_degree(self):
         return len(self.path(0., 0.))-1
@@ -450,7 +450,7 @@ class RoughPathSymbolic(RoughPath):
             self.new_level()
         x_s = self.eval_path(s, N)
         x_t = self.eval_path(t, N)
-        return x_s.inverse() * x_t
+        return (x_s.inverse() * x_t).project_lie()
 
     def project_space(self, indices):
         return RoughPathSymbolic(path=self.path[1][indices], t=self.t, p=self.p, var_steps=self.var_steps,

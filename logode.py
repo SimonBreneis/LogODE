@@ -122,7 +122,7 @@ def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute
     sig_steps = 2000
     if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
         sig_steps = x.sig_steps
-    y_list = [ta.array_to_tensor(y[:, i], len(y_0[1])) for i in range(y.shape[1])]
+    y_list = [ta.array_to_tensor(y[:, i], len(y_0[1])).project_lie() for i in range(y.shape[1])]
     y = rp.rough_path_exact_from_exact_path(times=partition, path=y_list, sig_steps=sig_steps, p=x.p,
                                             var_steps=x.var_steps, norm=x.norm)
     # y = rp.RoughPathPrefactor(y, y_0)
