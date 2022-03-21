@@ -162,7 +162,6 @@ def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', com
         error = -1
 
     y = rp.RoughPathDiscrete(times=partition, values=y, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol)
-    # y = rp.RoughPathPrefactor(y, y_0)
     return y, error
 
 
@@ -202,8 +201,28 @@ def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45',
     :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
     :return: Solution on partition points, error bound (-1 if no norm was specified)
     """
-    f_ext = f.adjoin()
-    return solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
+    if N_sol is None:
+        if isinstance(y_0, ta.Tensor):
+            N_sol = y_0.n_levels()
+        else:
+            N_sol = N
+    if isinstance(y_0, ta.Tensor):
+        y_0 = y_0[1]
+    if compute_bound:
+        y, error = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                               compute_bound=compute_bound)
+    else:
+        y = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                        compute_bound=compute_bound)
+        error = -1
+
+    x_dim = x.dim()
+    z = np.empty((x_dim + y.shape[0], y.shape[1]))
+    for i in range(y.shape[1]):
+        z[:x_dim, i] = x.sig(partition[0], partition[i], 1)[1]
+    z[x_dim:, :] = y
+    z = rp.RoughPathDiscrete(times=partition, values=z, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol)
+    return z, error
 
 
 def local_log_ode_error_constant(N, dim, p):

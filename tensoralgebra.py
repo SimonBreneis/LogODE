@@ -101,12 +101,21 @@ class Tensor:
         """
         return len(self) - 1
 
-    def project(self, N):
+    def project_level(self, N):
         """
         Returns a new tensor which is the projection onto the first N levels. If N is greater than self.n_levels(),
         returns a new tensor which is the extension (extended by zero-levels).
         :param N: Level of new tensor
         :return: A new projected/extended tensor
+        """
+        pass
+
+    def project_space(self, indices):
+        """
+        If the Tensor is over the vector space R^d with basis (e_0, ..., e_{d-1}), then this method projects the
+        Tensor onto R^k with basis (e_{i_1}, ..., e_{i_k}), where indices = [i_1, ..., i_k].
+        :param indices: Indices onto which the Tensor should be projected
+        :return: The projected Tensor
         """
         pass
 
@@ -179,8 +188,8 @@ class Tensor:
         :return: A new naturally extended signature tensor
         """
         if N <= self.n_levels():
-            return self.project(N)
-        return self.log().project(N).exp()
+            return self.project_level(N)
+        return self.log().project_level(N).exp()
 
     def norm(self, N, norm=l1):
         """
@@ -267,7 +276,7 @@ class SymbolicTensor(Tensor):
         """
         return SymbolicTensor([self[i]*alpha for i in range(self.n_levels()+1)])
 
-    def project(self, N):
+    def project_level(self, N):
         if len(self) >= N+1:
             return SymbolicTensor([self.tensor[i] for i in range(N + 1)])
         else:
@@ -275,6 +284,18 @@ class SymbolicTensor(Tensor):
             for i in range(len(self)):
                 new_tens.tensor[i] = self.tensor[i]
             return new_tens
+
+    def project_space(self, indices):
+        projected_tensor = [self[0]]
+        projection_matrix = sp.MutableDenseNDimArray([[0]*len(indices) for _ in range(self.dim())])
+        for i in range(len(indices)):
+            projection_matrix[indices[i], i] = 1
+        for i in range(1, self.n_levels()+1):
+            new_tensor = self[i].copy()
+            for j in range(i):
+                new_tensor = sp.tensorcontraction(sp.tensorproduct(new_tensor, projection_matrix), (0, i))
+            projected_tensor.append(new_tensor)
+        return SymbolicTensor(projected_tensor)
 
     def to_numeric_tensor(self):
         """
@@ -368,7 +389,7 @@ class NumericTensor(Tensor):
         """
         return NumericTensor([self[i]*alpha for i in range(self.n_levels()+1)])
 
-    def project(self, N):
+    def project_level(self, N):
         if len(self) >= N+1:
             return NumericTensor([self.tensor[i] for i in range(N + 1)])
         else:
@@ -376,6 +397,15 @@ class NumericTensor(Tensor):
             for i in range(len(self)):
                 new_tens.tensor[i] = self.tensor[i]
             return new_tens
+
+    def project_space(self, indices):
+        projected_tensor = [self[0]]
+        for i in range(1, self.n_levels()+1):
+            new_tensor = self[i]
+            for j in range(i):
+                new_tensor = np.take(new_tensor, indices, axis=j)
+            projected_tensor.append(new_tensor)
+        return NumericTensor(projected_tensor)
 
     def to_array(self):
         """

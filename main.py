@@ -15,6 +15,27 @@ import tensoralgebra as ta
 from fbm import FBM
 
 
+tens = [0, np.array([1, 2, 3]), np.array([[4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+        np.array([[[13, 14, 15], [16, 17, 18], [19, 20, 21]],
+                  [[22, 23, 24], [25, 26, 27], [28, 29, 30]],
+                  [[31, 32, 33], [34, 35, 36], [37, 38, 39]]])]
+
+tens = ta.NumericTensor(tens)
+print(tens)
+print(tens.project_space([2, 0]))
+
+tens = [0, sp.Array([1, 2, 3]), sp.Array([[4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+        sp.Array([[[13, 14, 15], [16, 17, 18], [19, 20, 21]],
+                  [[22, 23, 24], [25, 26, 27], [28, 29, 30]],
+                  [[31, 32, 33], [34, 35, 36], [37, 38, 39]]])]
+
+tens = ta.SymbolicTensor(tens)
+print(tens)
+print(tens.project_space([2, 0]))
+
+time.sleep(360000)
+
+
 ex.discussion(example=1.24, show=True, save=False, sym_path=True, sym_vf=False, full=1)
 print('Finished')
 time.sleep(360000)

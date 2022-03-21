@@ -83,6 +83,15 @@ class RoughPath:
         """
         return self.sig(s, t, N).log()
 
+    def project_space(self, indices):
+        """
+        If the RoughPath is over the vector space R^d with basis (e_0, ..., e_{d-1}), then this method projects the
+        RoughPath onto R^k with basis (e_{i_1}, ..., e_{i_k}), where indices = [i_1, ..., i_k].
+        :param indices: Indices onto which the RoughPath should be projected
+        :return: The projected RoughPath
+        """
+        pass
+
     def p_variation(self, s, t, p, var_steps, norm):
         """
         Estimates (lower bounds) the p-variation of the rough path on the interval [s,t].
@@ -120,7 +129,7 @@ class RoughPath:
                         return 0.
                     total_increment = increments[i].project(level)
                     for k in range(i+1, j):
-                        total_increment = total_increment * increments[k].project(level)
+                        total_increment = total_increment * increments[k].project_level(level)
                     return total_increment.norm(level, norm)
 
             variations[level-1] = p_var.p_var_backbone(var_steps+1, p/level, distance).value**(level/p)
@@ -310,6 +319,11 @@ class RoughPathDiscrete(RoughPath):
             result = left * inner * right
         return result
 
+    def project_space(self, indices):
+        new_values = self.val[:, indices]
+        return RoughPathDiscrete(times=self.times, values=new_values, p=self.p, var_steps=self.var_steps,
+                                 norm=self.norm, save_level=self.save_level)
+
 
 class RoughPathContinuous(RoughPath):
     def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1):
@@ -324,7 +338,7 @@ class RoughPathContinuous(RoughPath):
         """
         super().__init__(p, var_steps, norm)
         self.path = path
-        self.sig_step = sig_steps
+        self.sig_steps = sig_steps
 
     def sig(self, s, t, N):
         """
@@ -334,7 +348,11 @@ class RoughPathContinuous(RoughPath):
         :param N: Level of the signature
         :return: The signature
         """
-        return ta.sig(self.path(np.linspace(s, t, self.sig_step + 1)).T, N)
+        return ta.sig(self.path(np.linspace(s, t, self.sig_steps + 1)).T, N)
+
+    def project_space(self, indices):
+        return RoughPathContinuous(path=lambda t: self.path(t)[indices], sig_steps=self.sig_steps, p=self.p,
+                                   var_steps=self.var_steps, norm=self.norm)
 
 
 class RoughPathExact(RoughPath):
@@ -364,7 +382,7 @@ class RoughPathExact(RoughPath):
         result = self.path(s, t)
         exact_degree = len(result) - 1
         if N <= exact_degree:
-            return result.project(N)
+            return result.project_level(N)
         if self.sig_steps == 1:
             return result.extend_sig(N)
         times = np.linspace(s, t, self.sig_steps + 1)
@@ -375,6 +393,10 @@ class RoughPathExact(RoughPath):
 
     def exact_degree(self):
         return len(self.path(0., 0.))-1
+
+    def project_space(self, indices):
+        return RoughPathExact(path=lambda s, t: self.path(s, t).project_space(indices), sig_steps=self.sig_steps,
+                              p=self.p, var_steps=self.var_steps, norm=self.norm)
 
 
 class RoughPathSymbolic(RoughPath):
@@ -429,6 +451,10 @@ class RoughPathSymbolic(RoughPath):
         x_s = self.eval_path(s, N)
         x_t = self.eval_path(t, N)
         return x_s.inverse() * x_t
+
+    def project_space(self, indices):
+        return RoughPathSymbolic(path=self.path[1][indices], t=self.t, p=self.p, var_steps=self.var_steps,
+                                 norm=self.norm)
 
 
 def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1):
