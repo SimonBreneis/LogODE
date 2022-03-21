@@ -155,7 +155,8 @@ class RoughPath:
 
     def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
         times = np.linspace(0., T, n_intervals+1)
-        return np.sum(np.array([self.omega(s=times[i], t=times[i+1], p=p, var_steps=var_steps, norm=norm) for i in range(n_intervals)]))
+        return np.sum(np.array([self.omega(s=times[i], t=times[i+1], p=p, var_steps=var_steps, norm=norm)
+                                for i in range(n_intervals)]))
 
     def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
         """
@@ -216,13 +217,13 @@ class RoughPathDiscrete(RoughPath):
             save_level = 1
 
         length = len(times) - 1
-        n_discr_levels = int(np.log2(length)) + 1
-        n_intervals = [0] * n_discr_levels
+        n_discretization_levels = int(np.log2(length)) + 1
+        n_intervals = [0] * n_discretization_levels
         n_intervals[0] = length
-        for i in range(n_discr_levels - 1):
+        for i in range(n_discretization_levels - 1):
             n_intervals[i + 1] = int(n_intervals[i] / 2.)
         self.signature = [[ta.trivial_sig_num(self.val.shape[1], save_level) for _ in range(n_intervals[i])] for i in
-                          range(n_discr_levels)]
+                          range(n_discretization_levels)]
         for j in range(n_intervals[0]):
             self.signature[0][j] = ta.sig(np.array([self.val[j, :], self.val[j + 1, :]]), save_level)
         for i in range(1, len(self.signature)):
@@ -241,7 +242,7 @@ class RoughPathDiscrete(RoughPath):
             return self.signature[i][j].project(N)
         return self.signature[i][j].extend_sig(N)
 
-    def incr_canonical(self, s_ind, t_ind, N):
+    def canonical_increment(self, s_ind, t_ind, N):
         """
         Private function, do not call from outside! Computes the signature on [times[s_ind], times[t_ind]].
         :param s_ind: Index for initial time point
@@ -262,19 +263,19 @@ class RoughPathDiscrete(RoughPath):
         if s_ind_ == 0:
             inner = self.get_sig(approx_level, int(s_ind / approx_diff), N)
             left = ta.trivial_sig_num(self.val.shape[1], N)
-            right = self.incr_canonical(s_ind + approx_diff, t_ind, N)
+            right = self.canonical_increment(s_ind + approx_diff, t_ind, N)
         else:
             # the interval can then only be [approx_diff, 2*approx_diff] if s_ind_ + diff >= 2*approx_diff.
             if s_ind_ + diff >= 2 * approx_diff:
                 inner = self.get_sig(approx_level, int(s_ind / approx_diff) + 1, N)
-                left = self.incr_canonical(s_ind, int(s_ind / approx_diff + 1) * approx_diff, N)
-                right = self.incr_canonical(int(s_ind / approx_diff + 2) * approx_diff, t_ind, N)
+                left = self.canonical_increment(s_ind, int(s_ind / approx_diff + 1) * approx_diff, N)
+                right = self.canonical_increment(int(s_ind / approx_diff + 2) * approx_diff, t_ind, N)
             else:
                 # we conclude that there is no dyadic interval of length approx_diff in [s_ind, t_ind]. We thus can find
                 # at least one interval of length approx_diff/2.
                 inner = self.get_sig(approx_level - 1, int(s_ind / approx_diff * 2) + 1, N)
-                left = self.incr_canonical(s_ind, int(int(s_ind / approx_diff * 2 + 1) * (approx_diff / 2)), N)
-                right = self.incr_canonical(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
+                left = self.canonical_increment(s_ind, int(int(s_ind / approx_diff * 2 + 1) * (approx_diff / 2)), N)
+                right = self.canonical_increment(int(int(s_ind / approx_diff * 2 + 2) * (approx_diff / 2)), t_ind, N)
         return left * inner * right
 
     def sig(self, s, t, N):
@@ -303,7 +304,7 @@ class RoughPathDiscrete(RoughPath):
             left = ta.sig(np.array([x_s, self.val[s_ind, :]]), N)
             right = ta.sig(np.array([self.val[t_ind, :], x_t]), N)
             if self.save_level > 0:
-                inner = self.incr_canonical(s_ind, t_ind, N)
+                inner = self.canonical_increment(s_ind, t_ind, N)
             else:
                 inner = ta.sig(self.val[s_ind:(t_ind + 1), :], N)
             result = left * inner * right
@@ -430,6 +431,7 @@ class RoughPathSymbolic(RoughPath):
         return x_s.inverse() * x_t
 
 
+'''
 class RoughPathPrefactor(RoughPath):
     def __init__(self, rp, pref):
         super().__init__(p=rp.p, var_steps=rp.var_steps, norm=rp.norm)
@@ -444,7 +446,8 @@ class RoughPathPrefactor(RoughPath):
         :param N: Level of the signature
         :return: The signature up to level N on [s,t]
         """
-        return self.pref.project(N) * self.rp(s, t, N)
+        return self.pref.project(N) * self.rp.sig(s, t, N)
+'''
 
 
 def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1):

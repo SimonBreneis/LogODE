@@ -2,7 +2,7 @@ import math
 import time
 import numpy as np
 import scipy
-from scipy import integrate, special
+from scipy import integrate, special, stats
 import roughpath as rp
 import vectorfield as vf
 import tensoralgebra as ta
@@ -91,7 +91,7 @@ def solve_fixed(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_boun
                                  compute_bound)
     if compute_bound:
         return y, local_log_ode_error_constant(N, x.sig(0., 0., 1).dim(), x.p) * error_estimate
-    return y
+    return y, -1
 
 
 def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
@@ -115,25 +115,18 @@ def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute
         else:
             N_sol = N
     if isinstance(y_0, np.ndarray):
-        y_0 = ta.tensor_algebra_embedding(y_0, N_sol).to_array()
+        y_0 = ta.sig_first_level_num(y_0, N_sol)
     f_full = f.extend(N_sol)
-    if compute_bound:
-        y, error = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                               compute_bound=compute_bound)
-    else:
-        y = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                        compute_bound=compute_bound)
-
+    y, error = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                           compute_bound=compute_bound)
     sig_steps = 2000
     if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
         sig_steps = x.sig_steps
-    y_list = [ta.array_to_tensor(y[i, :], len(y_0[1])) for i in range(y.shape[0])]
-    rp_y = rp.rough_path_exact_from_exact_path(times=partition, path=y_list, sig_steps=sig_steps, p=x.p,
-                                               var_steps=x.var_steps, norm=x.norm)
-    y = rp.RoughPathPrefactor(rp_y, y_0)
-    if compute_bound:
-        return y, error
-    return y
+    y_list = [ta.array_to_tensor(y[:, i], len(y_0[1])) for i in range(y.shape[1])]
+    y = rp.rough_path_exact_from_exact_path(times=partition, path=y_list, sig_steps=sig_steps, p=x.p,
+                                            var_steps=x.var_steps, norm=x.norm)
+    # y = rp.RoughPathPrefactor(y, y_0)
+    return y, error
 
 
 def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
@@ -158,20 +151,19 @@ def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', com
             N_sol = y_0.n_levels()
         else:
             N_sol = N
-    if isinstance(y_0, np.ndarray):
-        y_0 = ta.tensor_algebra_embedding(y_0, N_sol).to_array()
+    if isinstance(y_0, ta.Tensor):
+        y_0 = y_0[1]
     if compute_bound:
-        y, error = solve_fixed(x, f, y_0[1], N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+        y, error = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                                compute_bound=compute_bound)
     else:
-        y = solve_fixed(x, f, y_0[1], N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+        y = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                         compute_bound=compute_bound)
+        error = -1
 
-    rp_y = rp.RoughPathDiscrete(times=partition, values=y, p=x.p, var_steps=x.var_steps, norm=x.norm)
-    y = rp.RoughPathPrefactor(rp_y, y_0)
-    if compute_bound:
-        return y, error
-    return y
+    y = rp.RoughPathDiscrete(times=partition, values=y, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol)
+    # y = rp.RoughPathPrefactor(y, y_0)
+    return y, error
 
 
 def local_log_ode_error_constant(N, dim, p):
@@ -203,7 +195,26 @@ def local_log_ode_error_constant(N, dim, p):
         int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
 
-def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=3, N_max=5, n_min=30, n_max=100, method='RK45'):
+def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=1, N_max=5, n_min=30, n_max=100, method='RK45'):
+    """
+    Implementation of the Log-ODE method. Computes error estimates for small number of intervals by comparing these
+    approximate solutions to a solution computed with a higher number of intervals. Does this for various values of N
+    (i.e. various levels of the Log-ODE method). For each N, estimates a convergence rate (and the corresponding
+    constant) from these error estimates. Then uses the N and the number of intervals which is most efficient at
+    achieving the desired error accuracy given these estimates.
+    :param x: Rough path
+    :param f: Vector field
+    :param y_0: Initial condition
+    :param T: Final time
+    :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
+    :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
+    :param N_min: Minimum level of the Log-ODE method that is used
+    :param N_max: Maximum level of the Log-ODE method that is used
+    :param n_min: Minimal number of subintervals used in estimating the errors
+    :param n_max: Maximal number of subintervals used in estimating the errors
+    :param method: Method for solving the ODEs
+    :return: Solution on partition points
+    """
     atol = atol/2
     rtol = rtol/2
     if isinstance(x, rp.RoughPathExact):
@@ -237,7 +248,8 @@ def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=3, N_max=5
         i = 0
         index = 0
         found_parameters = False
-        while not found_parameters and not increase_n and i < len(Ns) and time.perf_counter() - parameter_search_start < current_time_estimate/10:
+        while not found_parameters and not increase_n and i < len(Ns) \
+                and time.perf_counter() - parameter_search_start < current_time_estimate/10:
             if time_constants[i] == 0:
                 print('Computing new derivatives or integrals...')
                 solve_fixed(x, f, y_0, N=Ns[i], partition=np.array([0, T]), atol=atol * 1e+10, rtol=rtol * 1e+10,
@@ -291,7 +303,7 @@ def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=3, N_max=5
                 if error_exponents[i] < 0 and current_time_estimate < 10*(time.perf_counter() - parameter_search_start):
                     found_parameters = True
                 print(found_parameters)
-                i += 1
+                i = i + 1
 
         if found_parameters and 10*(time.perf_counter()-parameter_search_start) < current_time_estimate:
             found_parameters = False
@@ -320,7 +332,9 @@ def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=3, N_max=5
 
 def solve_adaptive(x, f, y_0, T, atol=1e-03, rtol=1e-02, method='RK45'):
     """
-    Implementation of the Log-ODE method.
+    Implementation of the Log-ODE method. Using a-priori estimates, tries to find an efficient and sufficiently fine
+    partition of [0, T] in the beginning. If the partition is not fine enough (this is cheched with the a-priori
+    bounds), then it is refined.
     :param x: Rough path
     :param f: Vector field
     :param y_0: Initial condition
@@ -345,14 +359,19 @@ def solve_adaptive(x, f, y_0, T, atol=1e-03, rtol=1e-02, method='RK45'):
     _, norm_estimates[3], _ = solve_step(x, f, y_0, s=0, t=T, N=p + 3, atol=10 * atol, rtol=10 * rtol, method=method,
                                          compute_bound=True)
     x.var_steps = var_steps
-    if norm_estimates[3] == 0: norm_estimates[3] = max(norm_estimates[0], norm_estimates[1], norm_estimates[2])
-    if norm_estimates[3] == 0: norm_estimates[3] = 1.
-    if norm_estimates[2] == 0: norm_estimates[2] = norm_estimates[3]
-    if norm_estimates[1] == 0: norm_estimates[1] = norm_estimates[2]
-    if norm_estimates[0] == 0: norm_estimates[0] = norm_estimates[1]
-    norm_incr = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1],
-                    norm_estimates[1] - norm_estimates[0])
-    norm_estimates[4:] = norm_estimates[3] + norm_incr * np.arange(1, 7)
+    if norm_estimates[3] == 0:
+        norm_estimates[3] = max(norm_estimates[0], norm_estimates[1], norm_estimates[2])
+    if norm_estimates[3] == 0:
+        norm_estimates[3] = 1.
+    if norm_estimates[2] == 0:
+        norm_estimates[2] = norm_estimates[3]
+    if norm_estimates[1] == 0:
+        norm_estimates[1] = norm_estimates[2]
+    if norm_estimates[0] == 0:
+        norm_estimates[0] = norm_estimates[1]
+    norm_increment = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1],
+                         norm_estimates[1] - norm_estimates[0])
+    norm_estimates[4:] = norm_estimates[3] + norm_increment * np.arange(1, 7)
     print(f"Norm estimates: {norm_estimates}")
     print(f"Error constants: {np.array([local_log_ode_error_constant(N, x_dim, p) for N in range(p, p + 10)])}")
     print(f"Omega: {omega_estimate}")

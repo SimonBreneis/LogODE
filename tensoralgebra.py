@@ -17,12 +17,16 @@ def l1(x):
 class Tensor:
     def __init__(self, tensor):
         """
-        Initialization
+        Initialization.
         :param tensor: A list, the ith element is the ith level of the tensor
         """
         self.tensor = tensor
 
     def __copy__(self):
+        """
+        Copies the tensor.
+        :return: A copy
+        """
         return Tensor([self[0], *[self[i].copy() for i in range(1, len(self))]])
 
     def __add__(self, other):
@@ -49,6 +53,10 @@ class Tensor:
         return len(self.tensor)
 
     def __str__(self):
+        """
+        A string representation of the tensor.
+        :return: The string representation
+        """
         return self.tensor.__str__()
 
     def __getitem__(self, item):
@@ -196,11 +204,16 @@ class Tensor:
         Transforms the Tensor into an array.
         :return: The array
         """
-        return None
+        pass
 
 
 class SymbolicTensor(Tensor):
     def __init__(self, tensor):
+        """
+        Initialization.
+        :param tensor: A list of sympy arrays. tensor[i] is a sympy i-tensor (with tensor[0] being a simple sympy
+            expression)
+        """
         super().__init__(tensor)
 
     def __copy__(self):
@@ -219,21 +232,29 @@ class SymbolicTensor(Tensor):
                 y = other
                 if N == 0:
                     return SymbolicTensor([x[0] * y[0]])
-                if N == 1:
+                elif N == 1:
                     return SymbolicTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0]])
-                if N == 2:
+                elif N == 2:
                     return SymbolicTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
                                            x[0] * y[2] + sp.tensorproduct(x[1], y[1]) + x[2] * y[0]])
-                if N == 3:
+                elif N == 3:
                     return SymbolicTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
                                            x[0] * y[2] + sp.tensorproduct(x[1], y[1]) + x[2] * y[0],
-                                           x[0] * y[3] + sp.tensorproduct(x[1], y[2]) + sp.tensorproduct(x[2], y[1]) + x[3] * y[0]])
-                # the following code also works for N in {0, 1, 2, 3}, but is considerably slower
-                result = trivial_tens_sym(self.dim(), N)
-                for i in range(N+1):
-                    for j in range(i+1):
-                        result[i] = result[i] + sp.tensorproduct(x[j], y[i - j])
-                return result
+                                           x[0] * y[3] + sp.tensorproduct(x[1], y[2]) + sp.tensorproduct(x[2], y[1])
+                                           + x[3] * y[0]])
+                elif N == 4:
+                    return SymbolicTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
+                                           x[0] * y[2] + sp.tensorproduct(x[1], y[1]) + x[2] * y[0],
+                                           x[0] * y[3] + sp.tensorproduct(x[1], y[2]) + sp.tensorproduct(x[2], y[1])
+                                           + x[3] * y[0],
+                                           x[0] * y[4] + sp.tensorproduct(x[1], y[3]) + sp.tensorproduct(x[2], y[2])
+                                           + sp.tensorproduct(x[3], y[1]) + x[4] * y[0]])
+                else:  # the following code also works for N in {0, 1, 2, 3, 4}, but is considerably slower
+                    result = trivial_tens_sym(self.dim(), N)
+                    for i in range(N+1):
+                        for j in range(i+1):
+                            result[i] = result[i] + sp.tensorproduct(x[j], y[i - j])
+                    return result
         # assume other is scalar
         return SymbolicTensor([other * self[i] for i in range(len(self))])
 
@@ -256,9 +277,18 @@ class SymbolicTensor(Tensor):
             return new_tens
 
     def to_numeric_tensor(self):
-        return NumericTensor([float(self.tensor[0]), *[np.array(self.tensor[i]).astype(np.float64) for i in range(1, len(self))]])
+        """
+        Converts the SymbolicTensor to a NumericTensor.
+        :return: A NumericTensor with exactly the same (evaluated) values
+        """
+        return NumericTensor([float(self.tensor[0]),
+                              *[np.array(self.tensor[i]).astype(np.float64) for i in range(1, len(self))]])
 
     def simplify(self):
+        """
+        Applies the sympy simplify function to all tensor elements.
+        :return: None, this overrides the current tensor
+        """
         self.tensor = [sp.simplify(self.tensor[i]) for i in range(len(self))]
 
     def to_array(self):
@@ -266,21 +296,27 @@ class SymbolicTensor(Tensor):
         Transforms the tensor into an array.
         :return: The array
         """
-        dimension = self.dim()
+        dim = self.dim()
         levels = self.n_levels()
-        length = (dimension**(levels+1) - 1)/(dimension-1)
-        result = sp.Array([0]*length)
-        index = 0
-        next_index = 1
-        for level in range(levels):
-            result[index:next_index] = self[level]
+        length = int(np.around((dim**(levels+1) - 1)/(dim-1)))
+        result = [0]*length
+        result[0] = self[0]
+        index = 1
+        next_index = 1 + dim
+        for level in range(1, levels+1):
+            result[index:next_index] = list(self[level].reshape(next_index-index))
             index = next_index
-            next_index += dimension**(level+1)
-        return result
+            next_index += dim**(level+1)
+        return sp.Array(result)
 
 
 class NumericTensor(Tensor):
     def __init__(self, tensor):
+        """
+        Initialization.
+        :param tensor: A list of numpy arrays. tensor[i] is an i-dimensional numpy array (except tensor[0], which is
+            a float
+        """
         super().__init__(tensor)
 
     def __copy__(self):
@@ -300,17 +336,26 @@ class NumericTensor(Tensor):
             y = other.tensor
             if N == 0:
                 return NumericTensor([x[0] * y[0]])
-            if N == 1:
+            elif N == 1:
                 return NumericTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0]])
-            if N == 2:
+            elif N == 2:
                 return NumericTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
                                       x[0] * y[2] + np.einsum('i,j->ij', x[1], y[1]) + x[2] * y[0]])
-            if N == 3:
+            elif N == 3:
                 return NumericTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
                                       x[0] * y[2] + np.einsum('i,j->ij', x[1], y[1]) + x[2] * y[0],
-                                      x[0] * y[3] + np.multiply.outer(x[1], y[2]) + np.multiply.outer(x[2], y[1]) + x[3] * y[0]])
-            # the following code also works for N in {0, 1, 2, 3}, but is considerably slower
-            return NumericTensor([np.sum(np.array([np.multiply.outer(x[j], y[i - j]) for j in range(i + 1)]), axis=0) for i in range(N + 1)])
+                                      x[0] * y[3] + np.multiply.outer(x[1], y[2]) + np.multiply.outer(x[2], y[1])
+                                      + x[3] * y[0]])
+            elif N == 4:
+                return NumericTensor([x[0] * y[0], x[0] * y[1] + x[1] * y[0],
+                                      x[0] * y[2] + np.einsum('i,j->ij', x[1], y[1]) + x[2] * y[0],
+                                      x[0] * y[3] + np.multiply.outer(x[1], y[2]) + np.multiply.outer(x[2], y[1])
+                                      + x[3] * y[0],
+                                      x[0] * y[4] + np.multiply.outer(x[1], y[3]) + np.multiply.outer(x[2], y[2])
+                                      + np.multiply.outer(x[3], y[1]) + x[4] * y[0]])
+            else:  # the following code also works for N in {0, 1, 2, 3}, but is considerably slower
+                return NumericTensor([np.sum(np.array([np.multiply.outer(x[j], y[i - j]) for j in range(i + 1)]),
+                                             axis=0) for i in range(N + 1)])
         # assume other is scalar
         return NumericTensor([other * self.tensor[i] for i in range(len(self))])
 
@@ -337,16 +382,20 @@ class NumericTensor(Tensor):
         Transforms the tensor into an array.
         :return: The array
         """
-        dimension = self.dim()
+        dim = self.dim()
         levels = self.n_levels()
-        length = (dimension**(levels+1) - 1)/(dimension-1)
+        if dim == 1:
+            length = levels + 1
+        else:
+            length = int(np.around((dim**(levels+1) - 1)/(dim-1)))
         result = np.empty(length)
-        index = 0
-        next_index = 1
-        for level in range(levels):
-            result[index:next_index] = self[level]
+        result[0] = self[0]
+        index = 1
+        next_index = 1 + dim
+        for level in range(1, levels+1):
+            result[index:next_index] = self[level].flatten()
             index = next_index
-            next_index += dimension**(level+1)
+            next_index += dim**(level+1)
         return result
 
 
@@ -470,12 +519,12 @@ def array_to_tensor(x, dim):
     :param dim: The dimension of the underlying vector space (the dimension of the first component)
     :return: The Tensor
     """
-    tensor = []
-    index = 0
-    next_index = 1
-    level = 0
+    tensor = [x[0]]
+    index = 1
+    next_index = 1 + dim
+    level = 1
     while next_index <= len(x):
-        tensor.append(x[index:next_index])
+        tensor.append(x[index:next_index].reshape(*([dim]*level)))
         index = next_index
         next_index += dim**(level+1)
         level += 1

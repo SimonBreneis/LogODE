@@ -15,6 +15,10 @@ import tensoralgebra as ta
 from fbm import FBM
 
 
+ex.discussion(example=1.24, show=True, save=False, sym_path=True, sym_vf=False, full=1)
+print('Finished')
+time.sleep(360000)
+
 vals, n = ex.asymmetric_Brownian_path(500, 1)
 plt.plot(np.linspace(0, 1, n+1), vals)
 plt.show()
