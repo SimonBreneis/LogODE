@@ -82,6 +82,16 @@ class VectorField:
         """
         pass
 
+    def one_form(self):
+        """
+        Suppose one wants to compute z = int f(y) dx. This can be computed by first considering
+        z = int f_1 ((x, y)) d(x, y), where we use the joint rough path (x, y) instead, and where f_1 is the
+        obvious extension of f so that this works. Then, we can further extend f_1 to f_2, which is a vector field such
+        that if we solve dv = f_2(v) d(x, y), then the solution is v = (x, y, z).
+        :return:
+        """
+        pass
+
 
 class VectorFieldNumeric(VectorField):
     def __init__(self, f, dim_x, dim_y, h=1e-06, norm=ta.l1):
@@ -158,6 +168,19 @@ class VectorFieldNumeric(VectorField):
             return result
 
         return VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h, norm=self.norm)
+
+    def one_form(self):
+        def f_1(y, x):
+            return self.f[0](y[self.dim_x:], x[:self.dim_x])
+
+        def f_2(y, x):
+            result = np.empty(self.dim_x + 2*self.dim_y)
+            result[:(self.dim_x + self.dim_y)] = x
+            result[(self.dim_x + self.dim_y):] = f_1(y[:(self.dim_x + self.dim_y)], x)
+            return result
+
+        return VectorFieldNumeric(f=[f_2], dim_x=self.dim_x+self.dim_y, dim_y=self.dim_x + 2*self.dim_y, h=self.h,
+                                  norm=self.norm)
 
 
 class VectorFieldSymbolic(VectorField):
@@ -250,3 +273,20 @@ class VectorFieldSymbolic(VectorField):
         f = sp.Array(f)
         new_vars = list(sp.symbols('b0:%d' % self.dim_x))
         return VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
+
+    def one_form(self):
+        f_1 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_y)]
+        for i in range(self.dim_y):
+            for j in range(self.dim_x):
+                f_1[i][j] = self.f[0][i, j]
+
+        f_2 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_x + 2*self.dim_y)]
+        for i in range(self.dim_x + self.dim_y):
+            f_2[i][i] = 1
+        for i in range(self.dim_x + self.dim_y, self.dim_x + 2*self.dim_y):
+            for j in range(self.dim_x + self.dim_y):
+                f_2[i][j] = f_1[i-self.dim_x-self.dim_y][j]
+        f_2 = sp.Array(f_2)
+        new_vars = list(sp.symbols('c0:%d' % (self.dim_x + self.dim_y)))
+        return VectorFieldSymbolic(f=[f_2], norm=self.norm, variables=new_vars + self.variables)
+

@@ -31,7 +31,7 @@ def insert_list(master, insertion, index):
         master.insert(index + i, insertion[i])
 
 
-def solve_step(x, f, y_s, s, t, N, atol, rtol, method='RK45', compute_bound=False):
+def solve_step(x, f, y_s, s, t, N, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False):
     """
     Implementation of the Log-ODE method.
     :param x: Rough path
@@ -56,7 +56,7 @@ def solve_step(x, f, y_s, s, t, N, atol, rtol, method='RK45', compute_bound=Fals
     return y
 
 
-def solve_fixed(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False):
+def solve_fixed(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False):
     """
     Implementation of the Log-ODE method.
     :param x: Rough path
@@ -94,7 +94,7 @@ def solve_fixed(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_boun
     return y, -1
 
 
-def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+def solve_fixed_full(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False, N_sol=None):
     """
     Implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
     :param x: Rough path
@@ -129,7 +129,8 @@ def solve_fixed_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute
     return y, error
 
 
-def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+def solve_fixed_full_alt(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
+                         N_sol=None):
     """
     Half-assed implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
     Really only solves the first level, and afterwards computes the signature. Faster, but in general (for p large)
@@ -165,7 +166,8 @@ def solve_fixed_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', com
     return y, error
 
 
-def solve_fixed_adj_full(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+def solve_fixed_adj_full(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
+                         N_sol=None):
     """
     Implementation of the Log-ODE method. Returns the full solution z = (x, y), i.e. the solution as a rough path.
     :param x: Rough path
@@ -184,7 +186,8 @@ def solve_fixed_adj_full(x, f, y_0, N, partition, atol, rtol, method='RK45', com
     return solve_fixed_full(x, f_ext, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
 
 
-def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45', compute_bound=False, N_sol=None):
+def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
+                             N_sol=None):
     """
     Half-assed implementation of the Log-ODE method. Returns the full solution z = (x, y), i.e. the solution as a rough
     path. Really only solves the first level, and afterwards computes the signature. Faster, but in general
@@ -223,6 +226,52 @@ def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol, rtol, method='RK45',
     z[x_dim:, :] = y
     z = rp.RoughPathDiscrete(times=partition, values=z, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol)
     return z, error
+
+
+def integral(xy, f, N, partition, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False, N_sol=None, full_output=0,
+             adjoined_output=False, path_output=False):
+    """
+    Computes the rough integral int_0^T f(y_t) dx_t using the Log-ODE method.
+    :param xy: Joint rough path (x, y)
+    :param f: One-form (vector field)
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param compute_bound: If True, also returns a theoretical error bound
+    :param N_sol: Level of the solution if full_output is 1 or 2. If None, uses N as the level
+    :param full_output: If 1, returns the integral as an instance of RoughPathExact (where all the levels were
+        computed), if 2, returns the integral as an instance of RoughPathDiscrete (where only the first level was
+        computed), if 0, returns the integral as an instance of numpy array (where again only the first level was
+        computed). If path_output is False, returns a Tensor or a numpy array, respectively
+    :param adjoined_output: If True, returns the solution z = (x, y, int f(y) dx), if False, returns the solution
+        z = int f(y) dx
+    :param path_output: If True, returns an instance of RoughPath, and hence the entire rough path solution. If False,
+        returns an instance of Tensor or numpy array, depending on full_output, containing only z_{0, T}
+    :return: The integral. Precise output determined by the variables full_output, adjoined_output, and path_output
+    """
+    if N_sol is None:
+        N_sol = N
+    f_ext = f.one_form()
+    y_0 = np.zeros(f.dim_y)
+    if full_output == 0:
+        z = solve_fixed(xy, f_ext, y_0, N, partition, atol, rtol, method, compute_bound)
+    elif full_output == 1:
+        z = solve_fixed_full(xy, f_ext, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
+    else:  # full_output == 2
+        z = solve_fixed_full_alt(xy, f_ext, y_0, N, partition, atol, rtol, method, compute_bound, N_sol)
+    if not adjoined_output:
+        if isinstance(z, rp.RoughPath):
+            z = z.project_space([i for i in range(f_ext.dim_x, f_ext.dim_y)])
+        else:  # z is a numpy array
+            z = z[f_ext.dim_x:, :]
+    if not path_output:
+        if isinstance(z, rp.RoughPath):
+            z = z.sig(partition[0], partition[-1], N_sol)
+        else:  # z is a numpy array
+            z = z[:, -1]
+    return z
 
 
 def local_log_ode_error_constant(N, dim, p):
