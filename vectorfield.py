@@ -21,6 +21,8 @@ class VectorField:
         self.norm = norm
         self.global_norm = [0.]  # the ith entry is a (lower) estimate of the norm \|f^{\circ i}\|_\infty
         self.local_norm = [0.]
+        self.flow_one_form = None  # Suppose that f is in L(R^d, Lip(R^e, R^e)). Returns the one-form g in
+        # L(R^(d+e), Lip(R^(d+e), R^(exe))) with g(x, y) = (f'(y) 0).
 
     def reset_local_norm(self):
         """
@@ -82,6 +84,15 @@ class VectorField:
         """
         pass
 
+    def flow_vf(self):
+        """
+        Returns the vector field associated with the flow, namely if f is in L(R^d, Lip(R^e, R^e)), this is the
+        vector field f_1 in L(R^(d+e), Lip(R^(d+e+e^2), R^(d+e+e^2)) with
+        f_1(x, y, h) = [[Id, 0], [0, Id], [f'(y), 0]].
+        :return: The above vector field
+        """
+        pass
+
     def one_form(self):
         """
         Suppose one wants to compute z = int f(y) dx. This can be computed by first considering
@@ -113,6 +124,7 @@ class VectorFieldNumeric(VectorField):
         self.h = h
         self.dim_x = dim_x
         self.dim_y = dim_y
+        self.flow_one_form = self.compute_flow_one_form()
 
     def derivative(self, y, dx):
         """
@@ -169,6 +181,29 @@ class VectorFieldNumeric(VectorField):
 
         return VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h, norm=self.norm)
 
+    def compute_flow_one_form(self):
+        def g(z, dz):
+            y = z[self.dim_x:]
+            dx = dz[:self.dim_x]
+            result = np.empty(self.dim_y * self.dim_y)
+            for i in range(self.dim_y):
+                e_i = np.zeros(self.dim_y)
+                e_i[i] = 1
+                result[i*self.dim_y:(i+1)*self.dim_y] = (self.f[0](y + self.h/2 * e_i, dx)
+                                                         - self.f[0](y - self.h/2 * e_i, dx))/self.h
+            return result
+        return g
+
+    def flow_vf(self):
+        def flow_f(v, dz):
+            z = v[:(self.dim_x + self.dim_y)]
+            result = np.empty(self.dim_x + self.dim_y + self.dim_y*self.dim_y)
+            result[:(self.dim_x + self.dim_y)] = dz
+            result[(self.dim_x + self.dim_y):] = self.flow_one_form(z, dz)
+            return result
+        return VectorFieldNumeric(f=[flow_f], dim_x=self.dim_x + self.dim_y,
+                                  dim_y=self.dim_x + self.dim_y + self.dim_y * self.dim_y, h=self.h, norm=self.norm)
+
     def one_form(self):
         def f_1(y, x):
             return self.f[0](y[self.dim_x:], x[:self.dim_x])
@@ -202,6 +237,13 @@ class VectorFieldSymbolic(VectorField):
         self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
         self.dim_x = self.f[0].shape[1]
         self.dim_y = self.f[0].shape[0]
+        der_f_list = [sp.diff(self.f[0], self.variables[i]).tolist() for i in range(len(self.variables))]
+        der_f_list_sum = []
+        for summand in der_f_list:
+            for row in summand:
+                row.append([0]*self.dim_y)
+            der_f_list_sum = der_f_list_sum + summand
+        self.flow_one_form = sp.Array(der_f_list_sum)
 
     def new_derivative(self):
         """
@@ -274,6 +316,13 @@ class VectorFieldSymbolic(VectorField):
         new_vars = list(sp.symbols('b0:%d' % self.dim_x))
         return VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
 
+    def flow_vf(self):
+        id = np.eye(self.dim_x + self.dim_y).tolist()
+        vf = sp.Array(id + self.flow_one_form.tolist())
+        new_vars_x = list(sp.symbols('e0:%d' % self.dim_x))
+        new_vars_h = list(sp.symbols('f0:%d' % (self.dim_y*self.dim_y)))
+        return VectorFieldSymbolic(f=[vf], norm=self.norm, variables=new_vars_x + self.variables + new_vars_h)
+
     def one_form(self):
         f_1 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_y)]
         for i in range(self.dim_y):
@@ -290,3 +339,22 @@ class VectorFieldSymbolic(VectorField):
         new_vars = list(sp.symbols('c0:%d' % (self.dim_x + self.dim_y)))
         return VectorFieldSymbolic(f=[f_2], norm=self.norm, variables=new_vars + self.variables)
 
+
+def matrix_multiplication_vector_field(d, norm=None):
+    """
+    Returns the vector field f in L(R^(d^2), Lip(R^(d^2), R^(d^2))) given by f(y)x = yx, where yx is the matrix
+    multiplication of two dxd matrices.
+    :param d: Dimension of the vector field
+    :param norm: The norm that should be used
+    :return: The vector field
+    """
+    variables = list(sp.symbols('g0:%d' % d*d))
+    f = sp.MutableDenseNDimArray(np.zeros((d*d, d*d)))
+    for i in range(d):
+        for j in range(d):
+            submatrix = [[0]*d for k in range(d)]
+            for k in range(d):
+                submatrix[k][k] = variables[i*d + j]
+            f[i*d:(i+1)*d, j*d:(j+1)*d] = submatrix
+    f = sp.Array(f.tolist())
+    return VectorFieldSymbolic(f=[f], norm=norm, variables=variables)

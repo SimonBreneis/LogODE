@@ -31,6 +31,44 @@ def insert_list(master, insertion, index):
         master.insert(index + i, insertion[i])
 
 
+def solve_step_sig(g, f, y_0, atol=1e-07, rtol=1e-04, method='RK45'):
+    """
+    Implementation of the Log-ODE method.
+    :param g: Signature/group-like element
+    :param f: Vector field
+    :param y_0: Current solution value
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :return: Solution of the Log-ODE method
+    """
+    return integrate.solve_ivp(lambda t, z: f.vector_field(g.log(), False)(z), (0, 1), y_0, method=method, atol=atol,
+                               rtol=rtol).y[:, -1]
+
+
+def solve_step_sig_full(g, f, y_0, atol=1e-07, rtol=1e-04, method='RK45', N_sol=None):
+    """
+    Implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
+    :param g: Signature/group-like element
+    :param f: Vector field (non-extended!)
+    :param y_0: Initial condition (tensor or vector)
+    :param atol: Absolute error tolerance of the ODE solver
+    :param rtol: Relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
+    :return: Solution of the Log-ODE method
+    """
+    if N_sol is None:
+        if isinstance(y_0, ta.Tensor):
+            N_sol = y_0.n_levels()
+        else:
+            N_sol = g.n_levels()
+    if isinstance(y_0, np.ndarray):
+        y_0 = ta.sig_first_level_num(y_0, N_sol)
+    f_full = f.extend(N_sol)
+    return solve_step_sig(g, f_full, y_0.to_array(), atol=atol, rtol=rtol, method=method)
+
+
 def solve_step(x, f, y_s, s, t, N, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False):
     """
     Implementation of the Log-ODE method.
@@ -119,9 +157,10 @@ def solve_fixed_full(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK
     f_full = f.extend(N_sol)
     y, error = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                            compute_bound=compute_bound)
-    sig_steps = 2000
     if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
         sig_steps = x.sig_steps
+    else:
+        sig_steps = 2000
     y_list = [ta.array_to_tensor(y[:, i], len(y_0[1])).project_lie() for i in range(y.shape[1])]
     y = rp.rough_path_exact_from_exact_path(times=partition, path=y_list, sig_steps=sig_steps, p=x.p,
                                             var_steps=x.var_steps, norm=x.norm)
@@ -303,6 +342,54 @@ def local_log_ode_error_constant(N, dim, p):
         int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
 
+def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45'):
+    """
+    Implementation of the Log-ODE method. Uses the a-posteriori error representation.
+    :param x: Rough path
+    :param f: Vector field
+    :param y_0: Initial condition
+    :param N: The degree of the Log-ODE method (f needs to be Lip(N+1))
+    :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
+    :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :return: Solution on partition points
+    """
+    if isinstance(y_0, np.ndarray):
+        y_0 = ta.sig_first_level_num(y_0, N)
+    x_dim = x.dim()
+    y_dim = y_0.dim()
+    z_dim = x_dim + y_dim
+    h_dim = y_dim * y_dim
+    f_flow = f.flow_vf()
+    linear_vf = vf.matrix_multiplication_vector_field(y_dim, norm=f.norm)
+    z, _ = solve_fixed_adj_full(x, f, y_0, N, partition, atol=atol, rtol=rtol, method=method, compute_bound=False, N_sol=N)
+    z_0 = y_0.add_dimensions(front=x_dim, back=0)
+    y = z.project_space([i + x_dim for i in range(y_dim)])
+    h_sig = [0]*(len(partition)-2)
+    Psi = [0]*(len(partition)-1)
+    Psi[-1] = np.eye(y_dim).flatten()
+    local_errors = np.zeros((len(partition), y_dim))
+    propagated_local_errors = np.zeros((len(partition)-1, y_dim))
+    y_on_partition = np.zeros((len(partition), y_dim))
+    y_on_partition[0, :] = y_0[1]
+    for i in range(1, len(partition)):
+        y_on_partition[i, :] = y_on_partition[0, :] + y.sig(partition[0], partition[i], 1)[1]
+    for i in range(len(partition)-2):
+        v_init = (z_0*z.sig(partition[0], partition[i])).add_dimensions(front=0, back=h_dim)
+        v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[i], partition[i+1], N), f_flow, y_0=v_init, atol=atol, rtol=rtol, method=method, N_sol=N)
+        h_sig[i] = v_sig.project_space([i + z_dim for i in range(h_dim)])
+    for i in range(len(partition)-2):
+        Psi[-2-i] = solve_step_sig(h_sig[-1-i].inverse(), linear_vf, Psi[-1-i], atol=atol, rtol=rtol, method=method)
+    for i in range(len(partition)-1):
+        subpartition = np.array([partition[i], (partition[i] + partition[i+1])/2, partition[i+1]])
+        y_local, _ = solve_fixed(x, f, y_0=y_on_partition[i, :], N=N, partition=subpartition, atol=atol/2, rtol=rtol/2, method=method, compute_bound=False)
+        local_errors[i, :] = y_local[-1] - y_on_partition[i+1, :]
+        propagated_local_errors[i, :] = Psi[i].reshape((y_dim, y_dim)) @ local_errors[i, :]
+    # global_error = np.sum(propagated_local_errors, axis=0)
+    return y_on_partition, propagated_local_errors
+
+
 def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=1, N_max=5, n_min=30, n_max=100, method='RK45'):
     """
     Implementation of the Log-ODE method. Computes error estimates for small number of intervals by comparing these
@@ -432,10 +519,11 @@ def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=1, N_max=5
     if n < n_ref:
         print('Already had good enough approximation.')
         return true_sol_paths[index]
-    sol = solve_fixed(x, f, y_0, N=N, partition=np.linspace(0, T, n), atol=atol / (3 * n), rtol=rtol / (3 * n),
+    partition = np.linspace(0, T, n)
+    sol = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol / (3 * n), rtol=rtol / (3 * n),
                       method=method)
     print(f'Solving the Log-ODE took {time.perf_counter() - tic:.3g} seconds.')
-    return sol
+    return partition, sol
 
 
 def solve_adaptive(x, f, y_0, T, atol=1e-03, rtol=1e-02, method='RK45'):
@@ -596,3 +684,51 @@ def find_partition(omega, p, s, t, n, q=2.):
         next_point = find_next_interval(omega, partition[-1], t, lower_omega, upper_omega)
         partition.append(next_point)
     return partition
+
+
+def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
+          N_sol=1, N_min=1, N_max=5, n_min=30, n_max=100):
+    """
+
+    :param x:
+    :param f:
+    :param y_0:
+    :param solver: f/a (fixed or adaptive), s/f (simple or full), s/a (simple or adjoined), last letter indicating the
+        kind of algorithm used (if only one implementation exists, s for standard)
+    :param N:
+    :param T:
+    :param partition:
+    :param atol:
+    :param rtol:
+    :param method:
+    :param compute_bound:
+    :param N_sol:
+    :param N_min:
+    :param N_max:
+    :param n_min:
+    :param n_max:
+    :return:
+    """
+    if solver == 'fsss':
+        return solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                           compute_bound=compute_bound)
+    elif solver == 'ffss':
+        return solve_fixed_full(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                compute_bound=compute_bound, N_sol=N_sol)
+    elif solver == 'ffsa':
+        return solve_fixed_full_alt(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                    compute_bound=compute_bound, N_sol=N_sol)
+    elif solver == 'ffas':
+        return solve_fixed_adj_full(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                    compute_bound=compute_bound, N_sol=N_sol)
+    elif solver == 'ffaa':
+        return solve_fixed_adj_full_alt(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
+                                        compute_bound=compute_bound, N_sol=N_sol)
+    elif solver == 'fssr':
+        return solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
+                                                method=method)
+    elif solver == 'asss':
+        return solve_adaptive(x, f, y_0, T=T, atol=atol, rtol=rtol, method=method)
+    elif solver == 'assf':
+        return solve_adaptive_faster(x, f, y_0, T=T, atol=atol, rtol=rtol, N_min=N_min, N_max=N_max, n_min=n_min,
+                                     n_max=n_max, method=method)

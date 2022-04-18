@@ -266,6 +266,15 @@ class Tensor:
         """
         pass
 
+    def add_dimensions(self, front=0, back=0):
+        """
+        If self is a tensor in T^N(R^d), then returns the tensor (1, self, 1) in T^N(R^(front + d + back)).
+        :param front: Number of dimensions added in front
+        :param back: Number of dimensions added in back
+        :return: The extended tensor
+        """
+        pass
+
 
 class SymbolicTensor(Tensor):
     def __init__(self, tensor):
@@ -381,6 +390,16 @@ class SymbolicTensor(Tensor):
             next_index += dim**(level+1)
         return sp.Array(result)
 
+    def add_dimensions(self, front=0, back=0):
+        result = trivial_sig_sym(front + self.dim() + back, self.n_levels())
+        index = (slice(front, front+back),)
+        for n in range(1, self.n_levels()+1):
+            level = np.zeros([front + self.dim() + back]*n)
+            level[index] = np.array(self[n].tolist())
+            result[n] = sp.Array(level.tolist())
+            index = index + (slice(front, front+back),)
+        return result
+
 
 class NumericTensor(Tensor):
     def __init__(self, tensor):
@@ -477,6 +496,15 @@ class NumericTensor(Tensor):
             result[index:next_index] = self[level].flatten()
             index = next_index
             next_index += dim**(level+1)
+        return result
+
+    def add_dimensions(self, front=0, back=0):
+        result = trivial_sig_num(front + self.dim() + back, self.n_levels())
+        index = (slice(front, front+back),)
+        for n in range(1, self.n_levels()+1):
+            level = np.zeros([front + self.dim() + back]*n)
+            level[index] = np.array(self[n].tolist())
+            index = index + (slice(front, front+back),)
         return result
 
 
