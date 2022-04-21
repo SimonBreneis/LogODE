@@ -126,9 +126,22 @@ def rough_asymmetric_Brownian_path_time(n, dim, T=1., q=0.5, p=0., var_steps=15,
                                   sig_steps=int(np.fmax(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
 
 
+def time_rough_path(symbolic=True, norm=ta.l1, p=1., var_steps=15, N=1, sig_steps=2000):
+    if symbolic:
+        t = sp.symbols('t')
+        path = sp.Array([t])
+        x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
+        if N > 1:
+            for _ in range(1, N):
+                x.new_level()
+    else:
+        path = lambda t: np.array([t])
+        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+    return x
+
+
 def unit_circle(symbolic=True, param=4, norm=ta.l1, p=1., var_steps=15, N=1, sig_steps=2000):
     if symbolic:
-        param = sp.Integer(param)
         t = sp.symbols('t')
         path = sp.Array(
             [sp.cos(2 * param * sp.pi * t) / sp.sqrt(param), sp.sin(2 * param * sp.pi * t) / sp.sqrt(param)])
@@ -179,6 +192,21 @@ def third_level_path(param=4, norm=ta.l1, p=1., var_steps=15, sig_steps=2000):
         return (a + b + c + d) / param**(1/3)
 
     return rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+
+
+def linear_1x1_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    if symbolic:
+        y = sp.symbols('y')
+        f = sp.Array([[y]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        f = lambda y, x: np.array([y[0]*x[0]])
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=1, dim_y=1, h=h, norm=norm)
+
+    return vec_field
 
 
 def smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
@@ -500,11 +528,11 @@ def compare_sig_steps(N, n, sig_steps, errors, times, description, regression=Tr
 
 
 def apply_example(x, f, y_0, solver='fsss', N=2, partition=None, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
-                  compute_bound=False, method='RK45', T=1., N_min=1, N_max=4, n_min=10, n_max=40):
+                  compute_bound=False, method='RK45', T=1., N_min=1, N_max=4, n_min=10, n_max=40, speed=-1):
     tic = time.perf_counter()
     output_1, output_2 = lo.solve(x, f, y_0, solver, N=N, T=T, partition=partition, atol=atol, rtol=rtol, method=method,
                                   compute_bound=compute_bound, N_sol=N_sol, N_min=N_min, N_max=N_max, n_min=n_min,
-                                  n_max=n_max)
+                                  n_max=n_max, speed=speed)
     toc = time.perf_counter()
 
     if plot:
@@ -520,92 +548,92 @@ def apply_example(x, f, y_0, solver='fsss', N=2, partition=None, plot=False, ato
 
 def ex_nilpotent_vf(solver='fsss', n=100, N=2, param=4, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
                     compute_bound=False, sig_steps=100, p=1, var_steps=15, norm=ta.l1, method='RK45', T=1.,
-                    sym_path=True, sym_vf=True, h=1e-07, N_min=1, N_max=4, n_min=10, n_max=40):
+                    sym_path=True, sym_vf=True, h=1e-07, N_min=1, N_max=4, n_min=10, n_max=40, x=None, f=None,
+                    speed=-1):
     partition = np.linspace(0, T, n + 1)
-    x = wiggly_sinh(symbolic=sym_path, param=param, norm=norm, p=p, var_steps=var_steps, N=N, sig_steps=sig_steps)
-    f = linear_nilpotent_3x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = wiggly_sinh(symbolic=sym_path, param=param, norm=norm, p=p, var_steps=var_steps, N=N, sig_steps=sig_steps)
+    if f is None:
+        f = linear_nilpotent_3x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([1., 1., 1.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
 def ex_smooth_path(solver='fsss', n=100, N=2, param=4, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
                    compute_bound=False, sig_steps=100, p=1, var_steps=15, norm=ta.l1, method='RK45', T=1.,
-                   sym_path=True, sym_vf=True, h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40):
+                   sym_path=True, sym_vf=True, h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40, x=None, f=None, speed=-1):
     partition = np.linspace(0, 1, n + 1)
-    x = unit_circle(symbolic=sym_path, param=param, norm=norm, p=p, var_steps=var_steps, N=N, sig_steps=sig_steps)
-    f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = unit_circle(symbolic=sym_path, param=param, norm=norm, p=p, var_steps=var_steps, N=N, sig_steps=sig_steps)
+    if f is None:
+        f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([0., 0.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
 def ex_pure_area(solver='fsss', n=100, N=2, plot=False, atol=1e-09, rtol=1e-06, N_sol=2, compute_bound=False,
                  sig_steps=100, p=2, var_steps=15, norm=ta.l1, method='RK45', T=1., sym_vf=True, h=1e-07, N_min=1,
-                 N_max=5, n_min=10, n_max=40):
+                 N_max=5, n_min=10, n_max=40, x=None, f=None, speed=-1):
     partition = np.linspace(0, 1, n + 1)
-    x = pure_area(norm=norm, p=p, var_steps=var_steps, sig_steps=sig_steps)
-    f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = pure_area(norm=norm, p=p, var_steps=var_steps, sig_steps=sig_steps)
+    if f is None:
+        f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([0., 0.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
 def ex_third_level(solver='fsss', n=100, N=2, param=4, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
                    compute_bound=False, sig_steps=100, p=1, var_steps=15, norm=ta.l1, method='RK45', T=1., sym_vf=True,
-                   h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40):
+                   h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40, x=None, f=None, speed=-1):
     partition = np.linspace(0, 1, n + 1)
-    x = third_level_path(param=param, norm=norm, p=p, var_steps=var_steps, sig_steps=sig_steps)
-    f = smooth_2x3_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = third_level_path(param=param, norm=norm, p=p, var_steps=var_steps, sig_steps=sig_steps)
+    if f is None:
+        f = smooth_2x3_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([0., 0.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
 def ex_fBm_path(solver='fsss', n=100, N=2, param=4, plot=False, atol=1e-09, rtol=1e-06, N_sol=2, compute_bound=False,
                 sig_steps=100, var_steps=15, norm=ta.l1, method='RK45', T=1., sym_vf=True, h=1e-07, N_min=1, N_max=5,
-                n_min=10, n_max=40):
+                n_min=10, n_max=40, x=None, f=None, speed=-1):
     partition = np.linspace(0, 1, n + 1)
-
-    if isinstance(param, rp.RoughPath):
-        x = param
-    else:
-        p = 1 / param + 0.1
-        x = rough_fractional_Brownian_path(H=param, n=n * sig_steps, dim=2, T=1., p=p, var_steps=var_steps, norm=norm,
-                                           save_level=N)
-
-    f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = rough_fractional_Brownian_path(H=param, n=n * sig_steps, dim=2, T=1., p=1 / param + 0.1, var_steps=var_steps,
+                                           norm=norm, save_level=N)
+    if f is None:
+        f = smooth_2x2_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([0., 0.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
 def ex_langevin_banana(solver='fsss', n=100, N=2, param=4, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
                        compute_bound=False, sig_steps=100, var_steps=15, norm=ta.l1, method='RK45', T=1., sym_vf=True,
-                       h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40):
+                       h=1e-07, N_min=1, N_max=5, n_min=10, n_max=40, x=None, f=None, speed=-1):
     partition = np.linspace(0, 1, n + 1)
-
-    if isinstance(param, rp.RoughPath):
-        x = param
-    else:
-        p = 1 / param + 0.1
-        x = rough_fractional_Brownian_path_time(H=param, n=n * sig_steps, dim=2, T=1., p=p, var_steps=var_steps,
-                                                norm=norm, save_level=N)
-
-    f = langevin_banana_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
+    if x is None:
+        x = rough_fractional_Brownian_path_time(H=param, n=n * sig_steps, dim=2, T=1., p=1 / param + 0.1,
+                                                var_steps=var_steps, norm=norm, save_level=N)
+    if f is None:
+        f = langevin_banana_vector_field(symbolic=sym_vf, norm=norm, N=N, h=h)
     y_0 = np.array([0., 0.])
     return apply_example(x=x, f=f, y_0=y_0, solver=solver, N=N, partition=partition, plot=plot, atol=atol, rtol=rtol,
                          N_sol=N_sol, compute_bound=compute_bound, method=method, T=T, N_min=N_min, N_max=N_max,
-                         n_min=n_min, n_max=n_max)
+                         n_min=n_min, n_max=n_max, speed=speed)
 
 
-def discussion(example, show=False, save=False, rounds=1, solver='fsss',
-               N_sol=2):
+def discussion(example, show=False, save=False, rounds=1, solver='fsss', N_sol=2):
     """
     Discusses the problem in smooth_vf_smooth_path.
     :param example: Float that chooses the example that is discussed.

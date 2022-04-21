@@ -21,8 +21,9 @@ class VectorField:
         self.norm = norm
         self.global_norm = [0.]  # the ith entry is a (lower) estimate of the norm \|f^{\circ i}\|_\infty
         self.local_norm = [0.]
-        self.flow_one_form = None  # Suppose that f is in L(R^d, Lip(R^e, R^e)). Returns the one-form g in
-        # L(R^(d+e), Lip(R^(d+e), R^(exe))) with g(x, y) = (f'(y) 0).
+        self.flow_vf = None
+        self.adj_vf = None
+        self.full_vf = []
 
     def reset_local_norm(self):
         """
@@ -84,7 +85,7 @@ class VectorField:
         """
         pass
 
-    def flow_vf(self):
+    def flow(self):
         """
         Returns the vector field associated with the flow, namely if f is in L(R^d, Lip(R^e, R^e)), this is the
         vector field f_1 in L(R^(d+e), Lip(R^(d+e+e^2), R^(d+e+e^2)) with
@@ -124,7 +125,8 @@ class VectorFieldNumeric(VectorField):
         self.h = h
         self.dim_x = dim_x
         self.dim_y = dim_y
-        self.flow_one_form = self.compute_flow_one_form()
+        self.flow_one_form = self.compute_flow_one_form() # Suppose that f is in L(R^d, Lip(R^e, R^e)). Returns the
+        # one-form g in L(R^(d+e), Lip(R^(d+e), R^(exe))) with g(x, y) = (f'(y) 0).
 
     def derivative(self, y, dx):
         """
@@ -147,39 +149,43 @@ class VectorFieldNumeric(VectorField):
         return result
 
     def extend(self, level_y):
+        while len(self.full_vf) <= level_y:
+            self.full_vf.append(None)
+        if self.full_vf[level_y] is None:
+            def f(y, x):
+                """
+                The (first/zeroth derivative of the) extended vector field.
+                :param y: Current signature of the solution (in array form)
+                :param x: Log-signature of the driving path
+                :return: The vector field applied to the log-signature
+                """
+                y_tens = ta.array_to_tensor(y, self.dim_y)
+                fyx = ta.tensor_algebra_embedding(self.f[0](y_tens[1], x), y_tens.n_levels())
+                return (y_tens * fyx).to_array()
 
-        def f(y, x):
-            """
-            The (first/zeroth derivative of the) extended vector field.
-            :param y: Current signature of the solution (in array form)
-            :param x: Log-signature of the driving path
-            :return: The vector field applied to the log-signature
-            """
-            y_tens = ta.array_to_tensor(y, self.dim_y)
-            fyx = ta.tensor_algebra_embedding(self.f[0](y_tens[1], x), y_tens.n_levels())
-            return (y_tens * fyx).to_array()
-
-        if self.dim_y == 1:
-            extended_dim = level_y + 1
-        else:
-            extended_dim = int(np.around((self.dim_y**(level_y+1) - 1)/(self.dim_y - 1)))
-        return VectorFieldNumeric(f=[f], dim_y=extended_dim, h=self.h, norm=self.norm)
+            if self.dim_y == 1:
+                extended_dim = level_y + 1
+            else:
+                extended_dim = int(np.around((self.dim_y**(level_y+1) - 1)/(self.dim_y - 1)))
+            self.full_vf[level_y] = VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=extended_dim, h=self.h, norm=self.norm)
+        return self.full_vf[level_y]
 
     def adjoin(self):
+        if self.adj_vf is None:
+            def f(y, x):
+                """
+                The (first/zeroth derivative of the) vector field that adjoins the path x to the solution y
+                :param y: Current value of the solution
+                :param x: Log-signature of the driving path
+                :return: The vector field applied to the log-signature
+                """
+                result = np.empty(self.dim_x + self.dim_y)
+                result[:self.dim_x] = x
+                result[self.dim_x:] = self.f[0](y, x)
+                return result
 
-        def f(y, x):
-            """
-            The (first/zeroth derivative of the) vector field that adjoins the path x to the solution y
-            :param y: Current value of the solution
-            :param x: Log-signature of the driving path
-            :return: The vector field applied to the log-signature
-            """
-            result = np.empty(self.dim_x + self.dim_y)
-            result[:self.dim_x] = x
-            result[self.dim_x:] = self.f[0](y, x)
-            return result
-
-        return VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h, norm=self.norm)
+            self.adj_vf = VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h, norm=self.norm)
+        return self.adj_vf
 
     def compute_flow_one_form(self):
         def g(z, dz):
@@ -194,15 +200,18 @@ class VectorFieldNumeric(VectorField):
             return result
         return g
 
-    def flow_vf(self):
-        def flow_f(v, dz):
-            z = v[:(self.dim_x + self.dim_y)]
-            result = np.empty(self.dim_x + self.dim_y + self.dim_y*self.dim_y)
-            result[:(self.dim_x + self.dim_y)] = dz
-            result[(self.dim_x + self.dim_y):] = self.flow_one_form(z, dz)
-            return result
-        return VectorFieldNumeric(f=[flow_f], dim_x=self.dim_x + self.dim_y,
-                                  dim_y=self.dim_x + self.dim_y + self.dim_y * self.dim_y, h=self.h, norm=self.norm)
+    def flow(self):
+        if self.flow_vf is None:
+            def flow_f(v, dz):
+                z = v[:(self.dim_x + self.dim_y)]
+                result = np.empty(self.dim_x + self.dim_y + self.dim_y*self.dim_y)
+                result[:(self.dim_x + self.dim_y)] = dz
+                result[(self.dim_x + self.dim_y):] = self.flow_one_form(z, dz)
+                return result
+            self.flow_vf = VectorFieldNumeric(f=[flow_f], dim_x=self.dim_x + self.dim_y,
+                                              dim_y=self.dim_x + self.dim_y + self.dim_y * self.dim_y, h=self.h,
+                                              norm=self.norm)
+        return self.flow_vf
 
     def one_form(self):
         def f_1(y, x):
@@ -237,13 +246,9 @@ class VectorFieldSymbolic(VectorField):
         self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
         self.dim_x = self.f[0].shape[1]
         self.dim_y = self.f[0].shape[0]
-        der_f_list = [sp.diff(self.f[0], self.variables[i]).tolist() for i in range(len(self.variables))]
-        der_f_list_sum = []
-        for summand in der_f_list:
-            for row in summand:
-                row.append([0]*self.dim_y)
-            der_f_list_sum = der_f_list_sum + summand
-        self.flow_one_form = sp.Array(der_f_list_sum)
+        self.flow_vf = None
+        self.adj_vf = None
+        self.full_vf = []
 
     def new_derivative(self):
         """
@@ -284,44 +289,59 @@ class VectorFieldSymbolic(VectorField):
         return super().vector_field(ls, compute_norm)
 
     def extend(self, level_y):
-        if self.dim_y == 1:
-            n_new_vars = level_y
-        else:
-            n_new_vars = (self.dim_y**(level_y+1)-1)/(self.dim_y-1) - self.dim_y
-        new_vars = list(sp.symbols('a0:%d' % n_new_vars))
-        if self.dim_y == 1 and level_y == 2:
-            variables = [new_vars[0]] + self.variables + [new_vars[1]]
-        else:
-            variables = [new_vars[0]] + self.variables + new_vars[1:]
+        while len(self.full_vf) <= level_y:
+            self.full_vf.append(None)
+        if self.full_vf[level_y] is None:
+            if self.dim_y == 1:
+                n_new_vars = level_y
+            else:
+                n_new_vars = (self.dim_y**(level_y+1)-1)/(self.dim_y-1) - self.dim_y
+            new_vars = list(sp.symbols('a0:%d' % n_new_vars))
+            if len(new_vars) == 2:
+                variables = [new_vars[0]] + self.variables + [new_vars[1]]
+            else:
+                variables = [new_vars[0]] + self.variables + new_vars[1:]
 
-        y_tens = ta.array_to_tensor(sp.Array(variables), self.dim_y)
-        f = [[0]*self.dim_x for _ in range(len(variables))]
-        for i in range(self.dim_x):
-            f_temp = list((y_tens * ta.tensor_algebra_embedding(self.f[0][:, i], level_y)).to_array())
-            for j in range(len(variables)):
-                f[j][i] = f_temp[j]
-        f = sp.Array(f)
-        return VectorFieldSymbolic(f=[f], norm=self.norm, variables=variables)
+            y_tens = ta.array_to_tensor(sp.Array(variables), self.dim_y)
+            f = [[0]*self.dim_x for _ in range(len(variables))]
+            for i in range(self.dim_x):
+                f_temp = list((y_tens * ta.tensor_algebra_embedding(self.f[0][:, i], level_y)).to_array())
+                for j in range(len(variables)):
+                    f[j][i] = f_temp[j]
+            f = sp.Array(f)
+            self.full_vf[level_y] = VectorFieldSymbolic(f=[f], norm=self.norm, variables=variables)
+        return self.full_vf[level_y]
 
     def adjoin(self):
-        f = [[0]*self.dim_x for _ in range(self.dim_x + self.dim_y)]
-        for i in range(self.dim_x):
-            for j in range(self.dim_x):
-                if i == j:
-                    f[i][j] = 1
-        for i in range(self.dim_x, self.dim_x+self.dim_y):
-            for j in range(self.dim_x):
-                f[i][j] = self.f[0][i, j]
-        f = sp.Array(f)
-        new_vars = list(sp.symbols('b0:%d' % self.dim_x))
-        return VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
+        if self.adj_vf is None:
+            f = [[0]*self.dim_x for _ in range(self.dim_x + self.dim_y)]
+            for i in range(self.dim_x):
+                for j in range(self.dim_x):
+                    if i == j:
+                        f[i][j] = 1
+            for i in range(self.dim_x, self.dim_x+self.dim_y):
+                for j in range(self.dim_x):
+                    f[i][j] = self.f[0][i-self.dim_x, j]
+            f = sp.Array(f)
+            new_vars = list(sp.symbols('b0:%d' % self.dim_x))
+            self.adj_vf = VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
+        return self.adj_vf
 
-    def flow_vf(self):
-        id = np.eye(self.dim_x + self.dim_y).tolist()
-        vf = sp.Array(id + self.flow_one_form.tolist())
-        new_vars_x = list(sp.symbols('e0:%d' % self.dim_x))
-        new_vars_h = list(sp.symbols('f0:%d' % (self.dim_y*self.dim_y)))
-        return VectorFieldSymbolic(f=[vf], norm=self.norm, variables=new_vars_x + self.variables + new_vars_h)
+    def flow(self):
+        if self.flow_vf is None:
+            der_f_list = [sp.diff(self.f[0], self.variables[i]).tolist() for i in range(len(self.variables))]
+            der_f_list_sum = []
+            for summand in der_f_list:
+                for i in range(len(summand)):
+                    summand[i] = summand[i] + [0] * self.dim_y
+                der_f_list_sum = der_f_list_sum + summand
+            flow_one_form = sp.Array(der_f_list_sum)
+            id = np.eye(self.dim_x + self.dim_y).tolist()
+            vf = sp.Array(id + flow_one_form.tolist())
+            new_vars_x = list(sp.symbols('e0:%d' % self.dim_x))
+            new_vars_h = list(sp.symbols('f0:%d' % (self.dim_y*self.dim_y)))
+            self.flow_vf = VectorFieldSymbolic(f=[vf], norm=self.norm, variables=new_vars_x + self.variables + new_vars_h)
+        return self.flow_vf
 
     def one_form(self):
         f_1 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_y)]
@@ -348,7 +368,7 @@ def matrix_multiplication_vector_field(d, norm=None):
     :param norm: The norm that should be used
     :return: The vector field
     """
-    variables = list(sp.symbols('g0:%d' % d*d))
+    variables = list(sp.symbols('g0:%d' % (d*d)))
     f = sp.MutableDenseNDimArray(np.zeros((d*d, d*d)))
     for i in range(d):
         for j in range(d):

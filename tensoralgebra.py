@@ -392,12 +392,12 @@ class SymbolicTensor(Tensor):
 
     def add_dimensions(self, front=0, back=0):
         result = trivial_sig_sym(front + self.dim() + back, self.n_levels())
-        index = (slice(front, front+back),)
+        index = (slice(front, front+self.dim()),)
         for n in range(1, self.n_levels()+1):
             level = np.zeros([front + self.dim() + back]*n)
             level[index] = np.array(self[n].tolist())
             result[n] = sp.Array(level.tolist())
-            index = index + (slice(front, front+back),)
+            index = index + (slice(front, front+self.dim()),)
         return result
 
 
@@ -500,11 +500,10 @@ class NumericTensor(Tensor):
 
     def add_dimensions(self, front=0, back=0):
         result = trivial_sig_num(front + self.dim() + back, self.n_levels())
-        index = (slice(front, front+back),)
+        index = (slice(front, front+self.dim()),)
         for n in range(1, self.n_levels()+1):
-            level = np.zeros([front + self.dim() + back]*n)
-            level[index] = np.array(self[n].tolist())
-            index = index + (slice(front, front+back),)
+            result[n][index] = self[n]
+            index = index + (slice(front, front+self.dim()),)
         return result
 
 

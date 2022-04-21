@@ -248,7 +248,7 @@ class RoughPathDiscrete(RoughPath):
         :return: The signature
         """
         if N <= self.save_level:
-            return self.signature[i][j].project(N)
+            return self.signature[i][j].project_level(N)
         return self.signature[i][j].extend_sig(N)
 
     def canonical_increment(self, s_ind, t_ind, N):

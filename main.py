@@ -14,6 +14,102 @@ import sympy as sp
 import tensoralgebra as ta
 from fbm import FBM
 
+'''
+if __name__ == '__main__':
+    import cProfile, pstats
+    cProfile.run("ex.ex_smooth_path(solver='fssr', n=100)", "{}.profile".format(__file__))
+    s = pstats.Stats("{}.profile".format(__file__))
+    s.strip_dirs()
+    s.sort_stats("cumtime").print_stats(100)
+time.sleep(3600)
+'''
+
+'''
+y, _ = lo.solve_fixed_adj_full(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=np.array([1]), N=1, partition=np.linspace(0, 1, 6))
+y, _ = lo.solve_fixed_adj_full(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=ta.sig_first_level_num(np.array([1]), 1), N=1, partition=np.linspace(0, 1, 6))
+print(lo.solve_fixed_error_representation(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=np.array([1]), N=1, partition=np.linspace(0, 1, 6)))
+'''
+'''
+x = ex.unit_circle(param=1)
+x = ex.unit_circle(param=1, symbolic=False)
+f = ex.smooth_2x2_vector_field()
+f.new_derivative()
+print(f.f[1])
+sigma = lambda x: 1/(1+np.exp(-x))
+a = lambda y: y[0] - 2*y[1]
+second_level = lambda y: -0.6142 * np.array([y[1] + sigma(a(y)) + sigma(y[1]),
+                                            sigma(a(y))*sigma(y[1])*(1-sigma(y[1])) + (y[0]-y[1]+2*sigma(y[1]))*sigma(a(y))*(1-sigma(a(y)))])
+first_level_0 = lambda y: np.array([-1.5*(y[1]-y[0]) - 0.8660*y[1], -1.5*sigma(y[1]) + 0.8660*sigma(a(y))])
+first_level_1 = lambda y: np.array([1.7321*y[1], -1.7321*sigma(a(y))])
+first_level_2 = lambda y: np.array([1.5*(y[1]-y[0]) - 0.8660*y[1], 1.5*sigma(y[1]) + 0.8660*sigma(a(y))])
+true_vf = lambda t, y: 2*np.pi*np.array([-np.sin(2*np.pi*t)*(y[1]-y[0]) - np.cos(2*np.pi*t)*y[1], -np.sin(2*np.pi*t)*sigma(y[1]) + np.cos(2*np.pi*t)*sigma(a(y))])
+print(integrate.solve_ivp(fun=true_vf, t_span=(0, 1/3), y0=np.array([0, 0])).y[:, -1])
+print(integrate.solve_ivp(fun=lambda t, y: first_level_0(y) + second_level(y), t_span=(0, 1), y0=np.array([0, 0])).y[:, -1])
+# print(integrate.solve_ivp(fun=lambda t, y: np.array([2*y[0] - 2*y[1], -2*sigma(y[1])]), t_span=(0, 1), y0=np.array([0, 0])).y[:, -1])
+# print(integrate.solve_ivp(fun=lambda t, y: -np.array([2*y[0] - 2*y[1], -2*sigma(y[1])]), t_span=(0, 1), y0=np.array([1.92961986, -0.7920599])).y[:, -1])
+
+print(lo.solve_fixed_error_representation(x=ex.unit_circle(param=1), f=ex.smooth_2x2_vector_field(), y_0=np.array([0, 0]), N=2, partition=np.linspace(0, 1, 4)))
+time.sleep(3600)
+'''
+x = ex.unit_circle()
+# print(np.argwhere(np.array([0, 1, 2, 3]) > 1).flatten())
+
+f = ex.smooth_2x2_vector_field()
+# x = ex.rough_fractional_Brownian_path(H=0.5, n=1000*2000, dim=2, T=1., p=2.2, var_steps=15, norm=ta.l1,
+#                                             save_level=3)
+print('constructed')
+
+'''
+ex.ex_fBm_path(solver='assr', N=2, x=x, f=f, speed=0.1)
+print('finished')
+time.sleep(3600)
+'''
+
+tic = time.perf_counter()
+true_solution, _, true_time = ex.ex_smooth_path(N=3, n=1000, x=x, f=f, speed=0.1)
+toc = time.perf_counter()
+print(f'solving for true solution: {toc-tic}')
+true_solution = true_solution[:, -1]
+print(true_solution, true_time)
+N_vec = np.array([1, 2, 3])
+n_vec = np.array([16, 23, 32, 45, 64, 91, 128, 181, 256, 362])
+abs_global_error = np.zeros(len(n_vec))
+abs_true_error = np.zeros(len(n_vec))
+abs_difference = np.zeros(len(n_vec))
+abs_relative = np.zeros(len(n_vec))
+for i in range(len(N_vec)):
+    print(f'N={N_vec[i]}')
+    for j in range(len(n_vec)):
+        print(f'n={n_vec[j]}')
+        y, local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=N_vec[i], n=n_vec[j], x=x, f=f, speed=-0.1)
+        global_error = np.sum(local_errors, axis=0)
+        true_error = true_solution - y[-1, :]
+        abs_global_error[j] = ta.l1(global_error)
+        abs_true_error[j] = ta.l1(true_error)
+        abs_difference[j] = ta.l1(true_error - global_error)
+        abs_relative[j] = abs_global_error[j]/abs_true_error[j]
+        print(abs_global_error[j], abs_true_error[j], abs_difference[j], abs_relative[j], tictoc)
+    plt.loglog(n_vec, abs_global_error, label='estimated global error')
+    plt.loglog(n_vec, abs_true_error, label='true global error')
+    plt.loglog(n_vec, abs_difference, label='true - global error')
+    plt.title('Smooth path, smooth vector field\nComparing true and estimated global errors')
+    plt.legend(loc='best')
+    plt.xlabel('Number of intervals')
+    plt.ylabel('Error')
+    plt.show()
+
+
+
+
+y, propagated_local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=3)
+print(y)
+print(propagated_local_errors)
+global_error = np.sum(propagated_local_errors, axis=0)
+print(global_error)
+true_sol = np.array([-0.95972823, -0.97375321])
+print(true_sol - y[-1, :])
+print(tictoc)
+time.sleep(360000)
 
 tens = [0, np.array([1, 2, 3]), np.array([[4, 5, 6], [7, 8, 9], [10, 11, 12]]),
         np.array([[[13, 14, 15], [16, 17, 18], [19, 20, 21]],
