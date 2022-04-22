@@ -52,16 +52,29 @@ def local_log_ode_error_constant(N, p, dim):
 
 
 class RoughPath:
-    def __init__(self, p=1, var_steps=15, norm=ta.l1):
+    def __init__(self, p=1, var_steps=15, norm=ta.l1, x_0=None):
         """
         Initialization.
         :param p: Measures the roughness
         :param var_steps: Number of steps used in estimating the p-variation of the path
         :param norm: Norm used in computing the p-variation of the path
+        :param x_0: Initial value of the rough path
         """
         self.p = p
         self.var_steps = var_steps
         self.norm = norm
+        self.at_0 = x_0
+
+    def at(self, t, N):
+        """
+        Returns the value of the rough path up to level N at time t.
+        :param t: Time point
+        :param N: Level of the signature
+        :return: The value of the path at time t up to level N
+        """
+        if self.at_0 is None:
+            return self.sig(0, t, N)
+        return self.at_0.extend_sig(N) * self.sig(0, t, N)
 
     def sig(self, s, t, N):
         """
@@ -205,7 +218,7 @@ class RoughPath:
 
 
 class RoughPathDiscrete(RoughPath):
-    def __init__(self, times, values, p=1., var_steps=15, norm=ta.l1, save_level=0):
+    def __init__(self, times, values, p=1., var_steps=15, norm=ta.l1, save_level=0, x_0=None):
         """
         Representation of the rough path that is useful and efficient if the rough path is given only by its first
         level, and only as a sequence of points.
@@ -216,8 +229,13 @@ class RoughPathDiscrete(RoughPath):
         :param norm: Norm used in computing the p-variation of the path
         :param save_level: The signature up to save_level is precomputed and saved on a dyadic grid to enhance
             performance
+        :param x_0: Initial value of the rough path
         """
-        super().__init__(p, var_steps, norm)
+        if x_0 is None:
+            x_0 = ta.sig_first_level_num(values[0, :], max(1, save_level))
+        elif isinstance(x_0, np.ndarray):
+            x_0 = ta.sig_first_level_num(x_0, 1)
+        super().__init__(p, var_steps, norm, x_0)
         self.times = times
         self.val = values
         self.save_level = save_level
@@ -321,12 +339,13 @@ class RoughPathDiscrete(RoughPath):
 
     def project_space(self, indices):
         new_values = self.val[:, indices]
+        new_starting_value = self.at_0.project_space(indices)
         return RoughPathDiscrete(times=self.times, values=new_values, p=self.p, var_steps=self.var_steps,
-                                 norm=self.norm, save_level=self.save_level)
+                                 norm=self.norm, save_level=self.save_level, x_0=new_starting_value)
 
 
 class RoughPathContinuous(RoughPath):
-    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1, x_0=None):
         """
         This representation of a rough path is useful if only the first level of the rough path is given, and this level
         is given as a vectorized function of one variable.
@@ -335,8 +354,13 @@ class RoughPathContinuous(RoughPath):
         :param p: Roughness of the path
         :param var_steps: Number of steps used in computing the p-variation
         :param norm: Norm used in computing the p-variation
+        :param x_0: Initial value of the rough path
         """
-        super().__init__(p, var_steps, norm)
+        if x_0 is None:
+            x_0 = ta.sig_first_level_num(path(0), 1)
+        elif isinstance(x_0, np.ndarray):
+            x_0 = ta.sig_first_level_num(x_0, 1)
+        super().__init__(p, var_steps, norm, x_0)
         self.path = path
         self.sig_steps = sig_steps
 
@@ -352,11 +376,11 @@ class RoughPathContinuous(RoughPath):
 
     def project_space(self, indices):
         return RoughPathContinuous(path=lambda t: self.path(t)[indices], sig_steps=self.sig_steps, p=self.p,
-                                   var_steps=self.var_steps, norm=self.norm)
+                                   var_steps=self.var_steps, norm=self.norm, x_0=self.at_0.project_space(indices))
 
 
 class RoughPathExact(RoughPath):
-    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1):
+    def __init__(self, path, sig_steps=2000, p=1., var_steps=15, norm=ta.l1, x_0=None):
         """
         This representation of a rough path is useful if the rough path is given for multiple levels as a function of
         two time variables. It need not be vectorized.
@@ -366,8 +390,14 @@ class RoughPathExact(RoughPath):
         :param p: Roughness of the path
         :param var_steps: Number of steps used in approximating the p-variation
         :param norm: Norm used in computing the p-variation
+        :param x_0: Initial value of the rough path
         """
-        super().__init__(p, var_steps, norm)
+        if x_0 is None:
+            tens = path(0, 0)
+            x_0 = ta.trivial_sig_num(dim=tens.dim(), N=tens.n_levels())
+        elif isinstance(x_0, np.ndarray):
+            x_0 = ta.sig_first_level_num(x_0, 1)
+        super().__init__(p, var_steps, norm, x_0)
         self.path = path
         self.sig_steps = sig_steps
 
@@ -396,11 +426,11 @@ class RoughPathExact(RoughPath):
 
     def project_space(self, indices):
         return RoughPathExact(path=lambda s, t: self.path(s, t).project_space(indices), sig_steps=self.sig_steps,
-                              p=self.p, var_steps=self.var_steps, norm=self.norm)
+                              p=self.p, var_steps=self.var_steps, norm=self.norm, x_0=self.at_0.project_space(indices))
 
 
 class RoughPathSymbolic(RoughPath):
-    def __init__(self, path, t, p=1, var_steps=15, norm=ta.l1):
+    def __init__(self, path, t, p=1, var_steps=15, norm=ta.l1, x_0=None):
         """
         This representation of a rough path is useful if the path is given as the first level in a symbolic (sympy)
         form, and is such that there is hope that symbolic integration for computing the signature may prove
@@ -410,8 +440,15 @@ class RoughPathSymbolic(RoughPath):
         :param p: Roughness of the path
         :param var_steps: Number of steps used in approximating the p-variation
         :param norm: Norm used in computing the p-variation
+        :param x_0: Initial value of the rough path
         """
-        super().__init__(p, var_steps, norm)
+        if x_0 is None:
+            x_0 = ta.SymbolicTensor([1, path.subs(t, sp.Integer(0))])
+        elif isinstance(x_0, np.ndarray):
+            x_0 = ta.sig_first_level_num(x_0, 1)
+        elif isinstance(x_0, sp.Array):
+            x_0 = ta.SymbolicTensor([1, x_0])
+        super().__init__(p, var_steps, norm, x_0)
         self.path = ta.SymbolicTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
         self.t = t
         self.path_num = [lambda s: 1, sp.lambdify(self.t, self.path[1], 'numpy')]
@@ -454,10 +491,10 @@ class RoughPathSymbolic(RoughPath):
 
     def project_space(self, indices):
         return RoughPathSymbolic(path=self.path[1][indices], t=self.t, p=self.p, var_steps=self.var_steps,
-                                 norm=self.norm)
+                                 norm=self.norm, x_0=self.at_0.project_space(indices))
 
 
-def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1):
+def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1, x_0=None):
     """
     Given the sequence X_{0, t_i} of (truncated) signatures of X for t_i in times, returns the corresponding RoughPath
     object (an instance of RoughPathExact).
@@ -468,6 +505,7 @@ def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps
     :param p: Roughness of the path
     :param var_steps: Number of steps used in approximating the p-variation
     :param norm: Norm used in computing the p-variation
+    :param x_0: Initial value of the rough path
     :return: The path as an instance of RoughPathExact
     """
     def x_rp(s, t):
@@ -491,4 +529,4 @@ def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps
             x_t = path[t_ind] * (path[t_ind].inverse() * path[t_ind+1])**dt
         return x_s.inverse() * x_t
 
-    return RoughPathExact(path=x_rp, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+    return RoughPathExact(path=x_rp, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm, x_0=x_0)

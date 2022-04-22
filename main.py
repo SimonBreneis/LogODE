@@ -13,6 +13,14 @@ import cProfile
 import sympy as sp
 import tensoralgebra as ta
 from fbm import FBM
+import euler
+
+f_sym = ex.smooth_2x2_vector_field()
+f_num = ex.smooth_2x2_vector_field(symbolic=False)
+ls = ex.unit_circle().logsig(0, 1, 2)
+print(f_sym.apply(ls)(np.array([0.323, 0.124])))
+print(f_num.apply(ls)(np.array([0.323, 0.124])))
+time.sleep(3600)
 
 '''
 if __name__ == '__main__':
@@ -159,8 +167,8 @@ f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                            1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
 vec_field_ = vf.VectorFieldNumeric(f=[f], h=1e-07, norm=ta.l1)
 
-print(vec_field.vector_field(x.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
-print(vec_field_.vector_field(x_.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
+print(vec_field.apply(x.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
+print(vec_field_.apply(x_.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
 
 ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
 time.sleep(360000)
