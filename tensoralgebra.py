@@ -295,6 +295,8 @@ class SymbolicTensor(Tensor):
 
     def __mul__(self, other):
         if isinstance(other, Tensor):
+            if isinstance(other, NumericTensor):
+                return self.to_numeric_tensor() * other
             if isinstance(other, SymbolicTensor):
                 N = min(self.n_levels(), other.n_levels())
                 x = self

@@ -15,13 +15,30 @@ import tensoralgebra as ta
 from fbm import FBM
 import euler
 
+
+def stupid_flow(x, f, y_0, s, T=1, N=2, n=200, h=3e-04):
+    dim_y = len(y_0)
+    partition = np.linspace(s, T, n)
+    Psi = np.zeros((dim_y, dim_y))
+    y = lo.solve_fixed(x, f, y_0, N, partition)[0][:, -1]
+    for i in range(dim_y):
+        perturbation = np.zeros(dim_y)
+        perturbation[i] = 1
+        y_pert = lo.solve_fixed(x, f, y_0 + h*perturbation, N, partition)[0][:, -1]
+        Psi[:, i] = (y_pert - y)/h
+    return Psi
+
+
+
+
+'''
 f_sym = ex.smooth_2x2_vector_field()
 f_num = ex.smooth_2x2_vector_field(symbolic=False)
 ls = ex.unit_circle().logsig(0, 1, 2)
 print(f_sym.apply(ls)(np.array([0.323, 0.124])))
 print(f_num.apply(ls)(np.array([0.323, 0.124])))
 time.sleep(3600)
-
+'''
 '''
 if __name__ == '__main__':
     import cProfile, pstats
@@ -62,7 +79,7 @@ time.sleep(3600)
 x = ex.unit_circle()
 # print(np.argwhere(np.array([0, 1, 2, 3]) > 1).flatten())
 
-f = ex.smooth_2x2_vector_field()
+f = ex.smooth_2x2_vector_field(symbolic=False)
 # x = ex.rough_fractional_Brownian_path(H=0.5, n=1000*2000, dim=2, T=1., p=2.2, var_steps=15, norm=ta.l1,
 #                                             save_level=3)
 print('constructed')
@@ -73,14 +90,41 @@ print('finished')
 time.sleep(3600)
 '''
 
+
+y_on_partition, _, _ = ex.ex_smooth_path(solver='fssr', N=2, n=200, x=x, f=f, speed=0)
+y_1 = y_on_partition[1, :]
+partition = np.linspace(1/200, 2/200, 101)
+y, _ = lo.solve_fixed(x, f, y_1, N=2, partition=partition)
+z = np.zeros((101, 4))
+z[:, 2:] = y.transpose()
+z[:, :2] = np.array([x.at(partition[i], 1)[1] for i in range(101)])
+z_rp = rp.RoughPathDiscrete(partition, z)
+print(f'stupidly computed z: {z_rp.sig(1/200, 2/200, 2)}')
+sig = lambda x: 1/(1+np.exp(-x))
+matrix_1 = lambda y: np.array([[-1, 1], [0, sig(y[1])*(1-sig(y[1]))]])
+matrix_2 = lambda y: np.array([[0, -1], [sig(y[0]-2*y[1])*(1-sig(y[0]-2*y[1])), -2*sig(y[0]-2*y[1])*(1-sig(y[0]-2*y[1]))]])
+h_vec = np.zeros((2, 2, 100))
+for i in range(100):
+    h_vec[:, :, i] = matrix_1(y[:, i]) * (x.sig(partition[i], partition[i+1], 1)[1][0]) \
+                     + matrix_2(y[:, i]) * (x.sig(partition[i], partition[i+1], 1)[1][1])
+print('Stupidly computed h, twice:')
+print(np.sum(h_vec, axis=-1))
+print(np.sum(h_vec, axis=-1).flatten())
+
+
+
+print(f'stupidly computed flow: {stupid_flow(x, f, np.zeros(2), 0)}')
+print(f'stupidly computed flow, different h: {stupid_flow(x, f, np.zeros(2), 0, h=1e-04)}')
 tic = time.perf_counter()
-true_solution, _, true_time = ex.ex_smooth_path(N=3, n=1000, x=x, f=f, speed=0.1)
+true_solution, _, true_time = ex.ex_smooth_path(N=3, n=1000, x=x, f=f, speed=0)
 toc = time.perf_counter()
 print(f'solving for true solution: {toc-tic}')
 true_solution = true_solution[:, -1]
 print(true_solution, true_time)
-N_vec = np.array([1, 2, 3])
-n_vec = np.array([16, 23, 32, 45, 64, 91, 128, 181, 256, 362])
+N_vec = np.array([2])
+# N_vec = np.array([1, 2, 3])
+n_vec = np.array([200])
+# n_vec = np.array([16, 23, 32, 45, 64, 91, 128, 181, 256, 362])
 abs_global_error = np.zeros(len(n_vec))
 abs_true_error = np.zeros(len(n_vec))
 abs_difference = np.zeros(len(n_vec))
@@ -89,7 +133,9 @@ for i in range(len(N_vec)):
     print(f'N={N_vec[i]}')
     for j in range(len(n_vec)):
         print(f'n={n_vec[j]}')
-        y, local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=N_vec[i], n=n_vec[j], x=x, f=f, speed=-0.1)
+        y, local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=N_vec[i], n=n_vec[j], x=x, f=f, speed=0)
+
+        print(f'penultimate stupidly computed flow: {stupid_flow(x, f, y[-2, :], 199 / 200)}')
         global_error = np.sum(local_errors, axis=0)
         true_error = true_solution - y[-1, :]
         abs_global_error[j] = ta.l1(global_error)

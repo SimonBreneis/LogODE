@@ -200,8 +200,8 @@ class VectorFieldNumeric(VectorField):
             for i in range(self.dim_y):
                 e_i = np.zeros(self.dim_y)
                 e_i[i] = 1
-                result[i*self.dim_y:(i+1)*self.dim_y] = (self.f[0](y + self.h/2 * e_i, dx)
-                                                         - self.f[0](y - self.h/2 * e_i, dx))/self.h
+                derivative = (self.f[0](y + self.h/2 * e_i, dx) - self.f[0](y - self.h/2 * e_i, dx))/self.h
+                result[(slice(i, i + self.dim_y*self.dim_y, self.dim_y),)] = derivative
             return result
         return g
 
@@ -334,7 +334,9 @@ class VectorFieldSymbolic(VectorField):
             for summand in der_f_list:
                 for i in range(len(summand)):
                     summand[i] = summand[i] + [0] * self.dim_y
-                der_f_list_sum = der_f_list_sum + summand
+            for i in range(len(self.variables)):
+                for summand in der_f_list:
+                    der_f_list_sum = der_f_list_sum + [summand[i]]
             flow_one_form = sp.Array(der_f_list_sum)
             identity = np.eye(self.dim_x + self.dim_y).tolist()
             vf = sp.Array(identity + flow_one_form.tolist())

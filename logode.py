@@ -376,14 +376,14 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
         n_intervals = 0
 
     for i in range(len(partition)-2):
-        v_init = z.at(partition[i], N).add_dimensions(front=0, back=h_dim)
-        v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[i], partition[i+1], N), f.flow(), y_0=v_init,
+        v_init = z.at(partition[i+1], N).add_dimensions(front=0, back=h_dim)
+        v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[i+1], partition[i+2], N), f.flow(), y_0=v_init,
                                                        atol=atol, rtol=rtol, method=method, N_sol=N,
                                                        n_intervals=n_intervals)
-        h_sig[i] = v_sig.project_space([i + z_dim for i in range(h_dim)])
+        h_sig[i] = v_sig.project_space([j + z_dim for j in range(h_dim)])
 
     for i in range(len(partition)-2):
-        Psi[-2-i] = solve_step_sig(h_sig[-1-i].inverse(), linear_vf, Psi[-1-i], atol=atol, rtol=rtol, method=method)
+        Psi[-2-i] = solve_step_sig(h_sig[-1-i], linear_vf, Psi[-1-i], atol=atol, rtol=rtol, method=method)
 
     if speed <= 0.1:
         n_intervals = 10
@@ -503,304 +503,8 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=20,
                                                        method=method, speed=speed)
 
 
-def solve_adaptive_faster(x, f, y_0, T, atol=1e-03, rtol=1e-02, N_min=1, N_max=5, n_min=30, n_max=100, method='RK45'):
-    """
-    Implementation of the Log-ODE method. Computes error estimates for small number of intervals by comparing these
-    approximate solutions to a solution computed with a higher number of intervals. Does this for various values of N
-    (i.e. various levels of the Log-ODE method). For each N, estimates a convergence rate (and the corresponding
-    constant) from these error estimates. Then uses the N and the number of intervals which is most efficient at
-    achieving the desired error accuracy given these estimates.
-    :param x: Rough path
-    :param f: Vector field
-    :param y_0: Initial condition
-    :param T: Final time
-    :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
-    :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
-    :param N_min: Minimum level of the Log-ODE method that is used
-    :param N_max: Maximum level of the Log-ODE method that is used
-    :param n_min: Minimal number of subintervals used in estimating the errors
-    :param n_max: Maximal number of subintervals used in estimating the errors
-    :param method: Method for solving the ODEs
-    :return: Solution on partition points
-    """
-    atol = atol/2
-    rtol = rtol/2
-    if isinstance(x, rp.RoughPathExact):
-        exact_degree = x.exact_degree()
-        N_min = max(N_min, exact_degree)
-        N_max = max(N_max, exact_degree)
-    parameter_search_start = time.perf_counter()
-    ns = np.exp(np.linspace(np.log(n_min), np.log(n_max), 5))
-    ns = np.array([int(n) for n in ns])
-    n_ref = 2*ns[-1]
-    Ns = np.array([i for i in range(N_min, N_max+1)])
-    sol_dim = len(solve_fixed(x, f, y_0, N=1, partition=np.array([0., T]), atol=1e+10*atol, rtol=1e+10*atol,
-                              method=method, compute_bound=False)[:, -1])
-    true_sols = np.zeros((len(Ns), sol_dim))
-    true_sol_paths = [0]*len(Ns)
-    approx_sols = np.zeros((len(Ns), len(ns), sol_dim))
-    errors = np.zeros((len(Ns), len(ns)))
-    times = np.zeros((len(Ns), len(ns)))
-    error_constants = np.zeros(len(Ns))
-    error_exponents = np.zeros(len(Ns))
-    time_constants = np.zeros(len(Ns))
-    time_exponents = np.zeros(len(Ns))
-    intervals_needed = np.zeros(len(Ns))
-    times_needed = np.zeros(len(Ns))
-
-    index = 0
-    found_parameters = False
-    increase_n = False
-    current_time_estimate = math.inf  # estimate for how long it takes to solve the Log-ODE with the desired accuracy
-    while not found_parameters:
-        i = 0
-        index = 0
-        found_parameters = False
-        while not found_parameters and not increase_n and i < len(Ns) \
-                and time.perf_counter() - parameter_search_start < current_time_estimate/10:
-            if time_constants[i] == 0:
-                print('Computing new derivatives or integrals...')
-                solve_fixed(x, f, y_0, N=Ns[i], partition=np.array([0, T]), atol=atol * 1e+10, rtol=rtol * 1e+10,
-                            method=method)
-                print('Compute time estimates')
-                time_estimate_start = time.perf_counter()
-                solve_fixed(x, f, y_0, N=Ns[i], partition=np.linspace(0, T, 11), atol=atol/20, rtol=rtol/20,
-                            method=method)
-                time_estimate = time.perf_counter() - time_estimate_start
-                time_constants[i] = time_estimate/10
-                time_exponents[i] = 1.
-            approx_time_est_N = time_constants[i] * (np.sum(ns ** time_exponents[i]) + n_ref**time_exponents[i])
-            print(f'Time estimate: {time.perf_counter() - parameter_search_start + approx_time_est_N}, {current_time_estimate/2}')
-            if time.perf_counter() - parameter_search_start + approx_time_est_N > current_time_estimate/2:
-                found_parameters = True
-            else:
-                print('Onto the true solution!')
-                true_sol_paths[i] = solve_fixed(x, f, y_0, N=Ns[i], partition=np.linspace(0, T, n_ref+1),
-                                                atol=atol/(2*n_ref), rtol=rtol/(2*n_ref), method=method)
-                true_sols[i, :] = true_sol_paths[i][:, -1]
-                for j in range(len(ns)):
-                    print(f'N={Ns[i]}, n={ns[j]}')
-                    tic = time.perf_counter()
-                    approx_sols[i, j, :] = solve_fixed(x, f, y_0, N=Ns[i], partition=np.linspace(0, T, ns[j]+1),
-                                                       atol=atol / (2 * ns[j]), rtol=rtol / (2 * ns[j]),
-                                                       method=method)[:, -1]
-                    times[i, j] = time.perf_counter() - tic
-                    errors[i, j] = f.norm(true_sols[i, :] - approx_sols[i, j, :])
-                    print(times[i, j], errors[i, j])
-                error_exponents[i], error_constants[i], _, _, _ = log_linear_regression(ns, errors[i])
-                print(error_exponents[i], error_constants[i])
-                if error_exponents[i] > 0:
-                    error_exponents[i] = 0.
-                    if i >= 2:
-                        if error_exponents[i-2] == 0 or error_exponents[i-1] == 0:
-                            increase_n = True
-                time_exponents[i], time_constants[i], _, _, _ = log_linear_regression(ns, times[i])
-                if time_exponents[i] < 0.01:
-                    time_exponents[i] = 0.01
-                print(time_exponents[i], time_constants[i])
-                if error_exponents[i] >= 0:
-                    intervals_needed[i] = math.inf
-                else:
-                    intervals_needed[i] = (atol / error_constants[i]) ** (1 / error_exponents[i])
-                print(intervals_needed)
-                times_needed[i] = time_constants[i] * intervals_needed[i] ** time_exponents[i]
-                print(times_needed)
-                index = np.argmin(times_needed[:(i+1)])
-                current_time_estimate = times_needed[index]
-                print(index)
-                if error_exponents[i] < 0 and current_time_estimate < 10*(time.perf_counter() - parameter_search_start):
-                    found_parameters = True
-                print(found_parameters)
-                i = i + 1
-
-        if found_parameters and 10*(time.perf_counter()-parameter_search_start) < current_time_estimate:
-            found_parameters = False
-            increase_n = True
-
-        if not increase_n:
-            found_parameters = True
-        else:
-            ns = 2*ns
-            n_ref = 3*n_ref
-            increase_n = False
-
-    N = Ns[index]
-    n = int(max(intervals_needed[index], 1))
-    print(f'Chosen N={N}, n={n}')
-    print(f'Finding suitable parameters took {time.perf_counter()-parameter_search_start:.3g} seconds.')
-    tic = time.perf_counter()
-    if n < n_ref:
-        print('Already had good enough approximation.')
-        return true_sol_paths[index]
-    partition = np.linspace(0, T, n)
-    sol = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol / (3 * n), rtol=rtol / (3 * n),
-                      method=method)
-    print(f'Solving the Log-ODE took {time.perf_counter() - tic:.3g} seconds.')
-    return partition, sol
-
-
-def solve_adaptive(x, f, y_0, T, atol=1e-03, rtol=1e-02, method='RK45'):
-    """
-    Implementation of the Log-ODE method. Using a-priori estimates, tries to find an efficient and sufficiently fine
-    partition of [0, T] in the beginning. If the partition is not fine enough (this is checked with the a-priori
-    bounds), then it is refined.
-    :param x: Rough path
-    :param f: Vector field
-    :param y_0: Initial condition
-    :param T: Final time
-    :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
-    :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
-    :param method: Method for solving the ODEs
-    :return: Solution on partition points
-    """
-    var_steps = x.var_steps
-    x_dim = x.sig(0, 0, 1).dim()
-    p = x.p
-    p = int(p)
-    norm_estimates = np.zeros(10)
-    x.var_steps = max(var_steps, 100)
-    _, norm_estimates[0], omega_estimate = solve_step(x, f, y_0, s=0, t=T, N=p, atol=10 * atol, rtol=10 * rtol,
-                                                      method=method, compute_bound=True)
-    _, norm_estimates[1], _ = solve_step(x, f, y_0, s=0, t=T, N=p + 1, atol=10 * atol, rtol=10 * rtol, method=method,
-                                         compute_bound=True)
-    _, norm_estimates[2], _ = solve_step(x, f, y_0, s=0, t=T, N=p + 2, atol=10 * atol, rtol=10 * rtol, method=method,
-                                         compute_bound=True)
-    _, norm_estimates[3], _ = solve_step(x, f, y_0, s=0, t=T, N=p + 3, atol=10 * atol, rtol=10 * rtol, method=method,
-                                         compute_bound=True)
-    x.var_steps = var_steps
-    if norm_estimates[3] == 0:
-        norm_estimates[3] = max(norm_estimates[0], norm_estimates[1], norm_estimates[2])
-    if norm_estimates[3] == 0:
-        norm_estimates[3] = 1.
-    if norm_estimates[2] == 0:
-        norm_estimates[2] = norm_estimates[3]
-    if norm_estimates[1] == 0:
-        norm_estimates[1] = norm_estimates[2]
-    if norm_estimates[0] == 0:
-        norm_estimates[0] = norm_estimates[1]
-    norm_increment = max(norm_estimates[3] - norm_estimates[2], norm_estimates[2] - norm_estimates[1],
-                         norm_estimates[1] - norm_estimates[0])
-    norm_estimates[4:] = norm_estimates[3] + norm_increment * np.arange(1, 7)
-    print(f"Norm estimates: {norm_estimates}")
-    print(f"Error constants: {np.array([local_log_ode_error_constant(N, x_dim, p) for N in range(p, p + 10)])}")
-    print(f"Omega: {omega_estimate}")
-    number_intervals = np.array([(local_log_ode_error_constant(N, x_dim, p) * norm_estimates[N - p] ** (
-            N + 1) * omega_estimate ** ((N + 1.) / p) / atol) ** (p / (N - p + 1)) for N in range(p, p + 10)])
-    print(f"Number of intervals: {number_intervals}")
-    complexity = np.array([x_dim ** N for N in range(p, p + 10)]) * number_intervals
-    N = np.argmin(complexity) + p
-    print(f"N = {N}")
-    number_intervals = number_intervals[N - p]
-    print("Let us find a partition!")
-    partition = find_partition(omega=x.omega, p=x.p, s=0, t=T, n=number_intervals)
-    print("We found a partition!")
-    atol = atol
-    rtol = rtol
-    local_Ns = [N] * (len(partition) - 1)
-    max_local_error = [atol / len(partition)] * (len(partition) - 1)
-    y = [y_0]
-
-    i = 0
-    while i < len(partition) - 1:
-        print(f"At index {i + 1} of {len(partition) - 1}")
-        local_N = local_Ns[i]
-        y_next, norm_est, omega_est = solve_step(x, f, y_s=y[i], s=partition[i], t=partition[i + 1], N=local_N,
-                                                 atol=max_local_error[i] / 2,
-                                                 rtol=rtol / atol * max_local_error[i] / 2, method=method,
-                                                 compute_bound=True)
-        print(f"Norm estimate: {norm_est}, Omega estimate: {omega_est}")
-        error_est = local_log_ode_error_constant(local_N, x_dim, p) * norm_est ** (local_N + 1) * omega_est ** (
-                (local_N + 1.) / p)
-        print(f"Error estimate: {error_est}, Maximal error: {max_local_error[i]}")
-        if error_est < max_local_error[i]:
-            y.append(y_next)
-            i += 1
-        else:
-            new_error_est = error_est
-            new_local_N = local_N
-            subpartition = 1
-            while new_error_est >= max_local_error[i]:
-                error_est_N = local_log_ode_error_constant(new_local_N + 1, x_dim, p) * norm_est ** (
-                        new_local_N + 2) * omega_est ** ((new_local_N + 2.) / p)
-                error_est_part = error_est / x_dim ** ((new_local_N + 1) / p) * x_dim
-                if error_est_N < error_est_part:
-                    new_local_N += 1
-                else:
-                    subpartition *= 4
-                new_error_est = subpartition * local_log_ode_error_constant(new_local_N, x_dim, p) * norm_est ** (
-                        new_local_N + 1) * (omega_est / subpartition) ** ((new_local_N + 1.) / p)
-            if subpartition > 1:
-                x.var_steps = x.var_steps*3
-                new_subpartition = find_partition(omega=x.omega, p=x.p, s=partition[i], t=partition[i + 1],
-                                                  n=subpartition)
-                x.var_steps = int(x.var_steps)/3
-                insert_list(partition, new_subpartition[1:-1], i + 1)
-                insert_list(local_Ns, [new_local_N] * (len(new_subpartition) - 2), i + 1)
-                insert_list(max_local_error,
-                            [max_local_error[i] / (len(new_subpartition) - 1)] * (len(new_subpartition) - 2), i + 1)
-                max_local_error[i] = max_local_error[i] / (len(new_subpartition) - 1)
-            local_Ns[i] = new_local_N
-    return np.array(partition), np.array(y)
-
-
-def find_next_interval(omega, s, t, lower_omega, upper_omega):
-    """
-    Finds an interval of the form [s,u] with s <= u <= t such that lower_omega <= omega(s, u) <= upper_omega.
-    :param omega: The control function
-    :param s: Initial point of total interval
-    :param t: Final point of total interval
-    :param lower_omega: Lower bound of the control function on the new interval
-    :param upper_omega: Upper bound of the control function on the new interval
-    :return: The partition point u.
-    """
-    total_omega = omega(s, t)
-    if total_omega <= upper_omega:
-        return t
-    u_current = s + (t - s) * (lower_omega + upper_omega) / (2 * total_omega)
-    u_left = s
-    u_right = t
-
-    current_omega = omega(s, u_current)
-
-    while not lower_omega <= current_omega <= upper_omega and u_right - u_left > (t - s) * 10 ** (-10):
-        if current_omega > lower_omega:
-            u_right = u_current
-        else:
-            u_left = u_current
-
-        u_current = (u_left + u_right) / 2
-        current_omega = omega(s, u_current)
-
-    return u_current
-
-
-def find_partition(omega, p, s, t, n, q=2.):
-    """
-    Finds a partition of the interval [0,T] such that omega(0,T)/(qn) <= omega(s,t) <= q*omega(0,T)/n.
-    :param omega: The control function with respect to which a partition should be found
-    :param p: The roughness parameter of omega (omega is the control of a p-rough path)
-    :param s: Initial time
-    :param t: Final time
-    :param n: Approximate number of intervals into which [s, t] should be split
-    :param q: Tolerance in finding the "perfect" partition.
-    :return: The partition
-    """
-    total_omega = omega(s, t)
-    q = max(q, 1.1)
-    partition = [s]
-    lower_omega = total_omega / (q * n) ** (1 / p)
-    upper_omega = total_omega * (q / n) ** (1 / p)
-    print(f"Total omega: {total_omega}")
-    print(f"Lower omega: {lower_omega}")
-    print(f"Upper omega: {upper_omega}")
-    while not partition[-1] == t:
-        next_point = find_next_interval(omega, partition[-1], t, lower_omega, upper_omega)
-        partition.append(next_point)
-    return partition
-
-
 def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
-          N_sol=1, N_min=1, N_max=5, n_min=30, n_max=100, speed=-1):
+          N_sol=1, N_min=1, N_max=5, n=20, speed=-1):
     """
     Various Log-ODE implementations.
     :param x: Rough path
@@ -818,8 +522,7 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, 
     :param N_sol: Level of the solution
     :param N_min: Minimal degree of the Log-ODE method
     :param N_max: Maximal degree of the Log-ODE method
-    :param n_min: Minimal number of time intervals
-    :param n_max: Maximal number of time intervals
+    :param n: Number of time intervals
     :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
         estimated global error. If speed is -1, automatically finds a good value for speed
     :return: Depends on the solver
@@ -842,14 +545,9 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, 
     elif solver == 'fssr':
         return solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
                                                 method=method, speed=speed)
-    elif solver == 'asss':
-        return solve_adaptive(x, f, y_0, T=T, atol=atol, rtol=rtol, method=method)
-    elif solver == 'assf':
-        return solve_adaptive_faster(x, f, y_0, T=T, atol=atol, rtol=rtol, N_min=N_min, N_max=N_max, n_min=n_min,
-                                     n_max=n_max, method=method)
     elif solver == 'assN':
         return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N, T=T, atol=atol, rtol=rtol, method=method,
-                                                           speed=speed, n=n_min)
+                                                           speed=speed, n=n)
     elif solver == 'assr':
-        return solve_adaptive_error_representation(x, f, y_0, N_min=N_min, N_max=N_max, T=T, n=n_min, atol=atol,
+        return solve_adaptive_error_representation(x, f, y_0, N_min=N_min, N_max=N_max, T=T, n=n, atol=atol,
                                                    rtol=rtol, method=method, speed=speed)
