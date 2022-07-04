@@ -3,7 +3,7 @@ import sympy as sp
 from esig import tosig as ts
 
 
-def l1(x):
+def l1(x, axis=None):
     """
     Implementation of the l^1-norm.
     :param x: A numpy-array or a Tensor
@@ -11,7 +11,7 @@ def l1(x):
     """
     if isinstance(x, Tensor):
         return np.sum(np.array([x.norm(i, l1) for i in range(1, x.n_levels()+1)]))
-    return np.sum(np.abs(x))
+    return np.sum(np.abs(x), axis=axis)
 
 
 class Tensor:
@@ -32,6 +32,21 @@ class Tensor:
     def __add__(self, other):
         """
         Add two Tensors.
+        :param other: Tensor to be added
+        :return: A new Tensor which is the sum
+        """
+        pass
+
+    def __neg__(self):
+        """
+        Returns the negative tensor.
+        :return: A new tensor which is the negative version of the tensor
+        """
+        pass
+
+    def __sub__(self, other):
+        """
+        Subtract two Tensors.
         :param other: Tensor to be added
         :return: A new Tensor which is the sum
         """
@@ -293,6 +308,12 @@ class SymbolicTensor(Tensor):
             return SymbolicTensor([self[i] + other[i] for i in range(min(len(self), len(other)))])
         return other * self
 
+    def __neg__(self):
+        return SymbolicTensor([-self[i] for i in range(len(self))])
+
+    def __sub__(self, other):
+        return self + (-other)
+
     def __mul__(self, other):
         if isinstance(other, Tensor):
             if isinstance(other, NumericTensor):
@@ -413,18 +434,24 @@ class NumericTensor(Tensor):
         super().__init__(tensor)
 
     def __copy__(self):
-        return NumericTensor([self.tensor[0], *[self.tensor[i].copy() for i in range(1, len(self))]])
+        return NumericTensor([self[0], *[self[i].copy() for i in range(1, len(self))]])
 
     def __add__(self, other):
         if isinstance(other, SymbolicTensor):
             other = other.to_numeric_tensor()
-        return NumericTensor([self.tensor[i] + other.tensor[i] for i in range(min(len(self), len(other)))])
+        return NumericTensor([self[i] + other[i] for i in range(min(len(self), len(other)))])
+
+    def __neg__(self):
+        return NumericTensor([-self[i] for i in range(len(self))])
+
+    def __sub__(self, other):
+        return self + (-other)
 
     def __mul__(self, other):
         if isinstance(other, Tensor):
             if isinstance(other, SymbolicTensor):
                 other = other.to_numeric_tensor()
-            N = min(self.n_levels(), other.n_levels())
+            N = np.fmin(self.n_levels(), other.n_levels())
             x = self.tensor
             y = other.tensor
             if N == 0:
@@ -507,6 +534,12 @@ class NumericTensor(Tensor):
             result[n][index] = self[n]
             index = index + (slice(front, front+self.dim()),)
         return result
+
+    def save(self, directory):
+        with open(directory, 'wb') as f:
+            np.save(f, np.array([self[0]]))
+            for i in range(1, len(self)):
+                np.save(f, self[i])
 
 
 def trivial_tens_num(dim, N):
@@ -653,3 +686,16 @@ def tensor_multiplication_on_arrays(x, y, dim_x, dim_y):
     :return: The tensor product x*y, again in array form
     """
     return (array_to_tensor(x, dim_x) * array_to_tensor(y, dim_y)).to_array()
+
+
+def load_tensor(directory):
+    tens = []
+    with open(directory, 'rb') as f:
+        exception = False
+        while not exception:
+            try:
+                tens.append(np.load(f))
+            except:
+                exception = True
+    tens[0] = tens[0][0]
+    return NumericTensor(tens)

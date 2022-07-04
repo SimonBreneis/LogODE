@@ -14,6 +14,290 @@ import sympy as sp
 import tensoralgebra as ta
 from fbm import FBM
 import euler
+import brownianroughtree as brt
+
+'''
+if __name__ == '__main__':
+    import cProfile, pstats
+    cProfile.run("lo.solve_fully_adaptive_error_representation(x=ex.smooth_fractional_path(H=0.4, n=10000, save_level=3), f=ex.smooth_2x2_vector_field(N=3), y_0=np.array([0, 0]), N_min=2, N_max=3, atol=1e-03, rtol=1e-03)", "{}.profile".format(__file__))
+    s = pstats.Stats("{}.profile".format(__file__))
+    s.strip_dirs()
+    s.sort_stats("cumtime").print_stats(100)
+    s.sort_stats("tottime").print_stats(100)
+time.sleep(360000)
+'''
+x = ex.smooth_fractional_path(H=0.4, n=10000, save_level=3)
+f = ex.smooth_2x2_vector_field(N=3)
+partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([0, 0]), N_min=2, N_max=3, atol=1e-04, rtol=1e-04)
+fine_partition = np.empty(8*len(partition)-7)
+fine_N = np.zeros(8*len(N), dtype=int)
+for i in range(len(partition)-1):
+    fine_partition[8*i:(8*i+9)] = np.linspace(partition[i], partition[i+1], 9)
+    fine_N[8*i:8*(i+1)] = np.ones(8, dtype=int) * N[i]
+good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=np.array([0, 0]), N=fine_N, partition=fine_partition, atol=1e-04/len(fine_partition), rtol=1e-04/len(fine_partition))
+print(y[-1, :])
+print(good_y[-1, :])
+print(np.sum(prop_loc_err, axis=0))
+plt.plot(y[:, 0], y[:, 1])
+plt.title('Solution path')
+plt.show()
+c = ['red', 'orange', 'red', 'green']
+prev_N = np.array([True, True, True, True])
+for i in range(len(partition)-1):
+    if prev_N[N[i]-1]:
+        prev_N[N[i]-1] = False
+        plt.plot(np.array([partition[i], partition[i+1]]), np.array([partition[i+1]-partition[i], partition[i+1]-partition[i]]), color=c[N[i]-1], label=f'N={N[i]}')
+    else:
+        plt.plot(np.array([partition[i], partition[i + 1]]),
+                   np.array([partition[i + 1] - partition[i], partition[i + 1] - partition[i]]), color=c[N[i] - 1])
+plt.title('Length and degree of partition intervals')
+plt.xlabel('Time')
+plt.ylabel('Length of interval')
+plt.yscale('log')
+plt.legend(loc='best')
+plt.show()
+print('Finished!!')
+time.sleep(360000)
+
+
+# x, f, y_0, _, _, _, _, _, _ = ex.ex_smooth_path()
+x = ex.unit_circle(param=4, N=4)
+# x = brt.load_brownian_rough_tree('brownian rough trees/tree 0')
+f = ex.smooth_2x2_vector_field(N=4)
+# x = ex.smooth_3d_path(N=4)
+# f = ex.linear_2x3_vector_field(N=4)
+
+'''
+interval_vec = np.random.uniform(0, 1, (1000, 2))
+interval_vec = np.sort(interval_vec, axis=1)
+'''
+depth_vec = np.random.randint(1, 10, 1000)
+k_vec = np.array([np.random.randint(0, 2**depth_vec[i]) for i in range(1000)])
+interval_vec = np.empty((1000, 2))
+for i in range(1000):
+    interval_vec[i, 0] = k_vec[i] * 2.**(-depth_vec[i])
+    interval_vec[i, 1] = (k_vec[i]+1) * 2.**(-depth_vec[i])
+
+N_vec = np.array([1, 2, 3, 4])
+
+errors = np.empty((4, 1000))
+better_errors = np.empty((4, 1000))
+predictions_0 = np.empty((4, 1000))
+predictions_1 = np.empty((4, 1000))
+predictions_2 = np.empty((4, 991, 1000))
+predictions_3 = np.empty((4, 991, 1000))
+predictions_4 = np.empty((4, 1000, 1000))
+relative_errors_0 = np.empty((4, 1000))
+relative_errors_1 = np.empty((4, 1000))
+relative_errors_2 = np.empty((4, 991, 1000))
+relative_errors_3 = np.empty((4, 991, 1000))
+relative_errors_4 = np.empty((4, 1000, 1000))
+times = np.empty((4, 1000))
+pred_times = np.empty((4, 1000))
+
+# lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_vec[-1], partition=np.linspace(0, 1, n_vec[0]+1), atol=1e-04/n_vec[0], rtol=1e-04/n_vec[0])
+
+
+for j in range(1000):
+    y_0 = np.random.uniform(-5, 5, 2)
+    for i in range(len(N_vec)):
+        print(j, i)
+        s = interval_vec[j, 0]
+        t = interval_vec[j, 1]
+
+        approx, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_vec[i], partition=np.array([s, t]), atol=1e-03*(t-s), rtol=1e-03*(t-s))
+        better, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_vec[i], partition=np.linspace(s, t, 3), atol=1e-03*(t-s)/2, rtol=1e-03*(t-s)/2)
+        true, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_vec[i], partition=np.linspace(s, t, 33), atol=1e-03*(t-s)/32, rtol=1e-03*(t-s)/32)
+        errors[i, j] = ta.l1(true[:, -1]-approx[:, -1])
+        better_errors[i, j] = ta.l1(true[:, -1] - better[:, -1])
+        '''
+        tic = time.perf_counter()
+        lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_vec[i], partition=np.array([s, t]), atol=1e-03 * (t - s),
+                       rtol=1e-03 * (t - s))
+        times[i, j] = time.perf_counter() - tic
+        tic = time.perf_counter()
+        f.apply(x.logsig(s, t, N_vec[i]))(y_0)
+        pred_times[i, j] = time.perf_counter() - tic
+        '''
+for k in range(1000):
+    for i in range(len(N_vec)):
+        print(k, i)
+        predictions_0[i, k] = errors[i, k] * 2**(-(N_vec[i-1]+1)/1-1)
+        relative_errors_0[i, k] = better_errors[i, k] / predictions_0[i, k]
+        '''
+        predictions_0[i - 1, k] = N_vec[i - 1] * 2 * times[i - 1, k]
+        predictions_1[i - 1, k] = pred_times[i, k] / pred_times[i - 1, k] * times[i - 1, k]
+        relative_errors_0[i-1, k] = times[i, k] / predictions_0[i-1, k]
+        relative_errors_1[i-1, k] = times[i, k] / predictions_1[i-1, k]
+        '''
+for j in range(1000):
+    for k in range(1000):
+        for i in range(len(N_vec)):
+            print(j, k, i)
+            '''
+            predictions_4[i-1, j, k] = times[i, j] / times[i-1, j] * times[i-1, k]
+            relative_errors_4[i-1, j, k] = times[i, k] / predictions_4[i-1, j, k]
+            '''
+            predictions_4[i, j, k] = better_errors[i, j] / errors[i, j] * errors[i, k]
+            relative_errors_4[i, j, k] = better_errors[i, k] / predictions_4[i, j, k]
+            if j <= 990:
+                p = np.empty(10)
+                '''
+                predictions_2[i-1, j, k] = 1
+                for l in range(10):
+                    predictions_2[i-1, j, k] *= times[i, j+l] / times[i-1, j+l]
+                    p[l] = times[i, j+l] / times[i-1, j+l]
+                predictions_2[i-1, j, k] = predictions_2[i-1, j, k]**0.1 * times[i-1, k]
+                predictions_3[i - 1, j, k] = np.median(p) * times[i-1, k]
+                relative_errors_2[i-1, j, k] = times[i, k] / predictions_2[i-1, j, k]
+                relative_errors_3[i - 1, j, k] = times[i, k] / predictions_3[i - 1, j, k]
+                '''
+                predictions_2[i, j, k] = 1
+                for l in range(10):
+                    predictions_2[i, j, k] *= better_errors[i, j+l] / errors[i, j+l]
+                    p[l] = better_errors[i, j+l] / errors[i, j+l]
+                predictions_2[i, j, k] = predictions_2[i, j, k]**0.1 * errors[i, k]
+                predictions_3[i, j, k] = np.median(p) * errors[i, k]
+                relative_errors_2[i, j, k] = better_errors[i, k] / predictions_2[i, j, k]
+                relative_errors_3[i, j, k] = better_errors[i, k] / predictions_3[i, j, k]
+'''
+print('Actual average relative log-increase, 1->2:', np.average(np.log(times[1, :]/times[0, :])))
+print('Actual standard deviation, 1->2:', np.std(np.log(times[1, :]/times[0, :])))
+print('Actual average relative log-increase, 2->3:', np.average(np.log(times[2, :]/times[1, :])))
+print('Actual standard deviation, 2->3:', np.std(np.log(times[2, :]/times[1, :])))
+print('Actual average relative log-increase, 3->4:', np.average(np.log(times[3, :]/times[2, :])))
+print('Actual standard deviation, 3->4:', np.std(np.log(times[3, :]/times[2, :])))
+'''
+print('Actual average relative log-increase, 1:', np.average(np.log(better_errors[0, :]/errors[0, :])))
+print('Actual standard deviation, 1:', np.std(np.log(better_errors[0, :]/errors[0, :])))
+print('Actual average relative log-increase, 2:', np.average(np.log(better_errors[1, :]/errors[1, :])))
+print('Actual standard deviation, 2:', np.std(np.log(better_errors[1, :]/errors[1, :])))
+print('Actual average relative log-increase, 3:', np.average(np.log(better_errors[2, :]/errors[2, :])))
+print('Actual standard deviation, 3:', np.std(np.log(better_errors[2, :]/errors[2, :])))
+print('Actual average relative log-increase, 4:', np.average(np.log(better_errors[3, :]/errors[3, :])))
+print('Actual standard deviation, 4:', np.std(np.log(better_errors[3, :]/errors[3, :])))
+log_fraction_0 = np.log(relative_errors_0)
+l1_error_0 = np.abs(log_fraction_0)
+l1_average_0 = np.average(l1_error_0, axis=-1)
+l1_std_0 = np.std(l1_error_0, axis=-1)
+l1_med_0 = np.median(l1_error_0, axis=-1)
+print('l1 average:', l1_average_0)
+print('l1 standard deviation:', l1_std_0)
+print('l1 median:', l1_med_0)
+'''
+log_fraction_1 = np.log(relative_errors_1)
+l1_error_1 = np.abs(log_fraction_1)
+l1_average_1 = np.average(l1_error_1, axis=-1)
+l1_std_1 = np.std(l1_error_1, axis=-1)
+l1_med_1 = np.median(l1_error_1, axis=-1)
+print('l1 average:', l1_average_1)
+print('l1 standard deviation:', l1_std_1)
+print('l1 median:', l1_med_1)
+'''
+log_fraction_2 = np.log(relative_errors_2)
+l1_error_2 = np.sum(np.abs(log_fraction_2), axis=-1) / 990
+l1_average_2 = np.average(l1_error_2, axis=-1)
+l1_std_2 = np.std(l1_error_2, axis=-1)
+l1_med_2 = np.median(l1_error_2, axis=-1)
+print('l1 average:', l1_average_2)
+print('l1 standard deviation:', l1_std_2)
+print('l1 median:', l1_med_2)
+log_fraction_3 = np.log(relative_errors_3)
+l1_error_3 = np.sum(np.abs(log_fraction_3), axis=-1) / 990
+l1_average_3 = np.average(l1_error_3, axis=-1)
+l1_std_3 = np.std(l1_error_3, axis=-1)
+l1_med_3 = np.median(l1_error_3, axis=-1)
+print('l1 average:', l1_average_3)
+print('l1 standard deviation:', l1_std_3)
+print('l1 median:', l1_med_3)
+log_fraction_4 = np.log(relative_errors_4)
+l1_error_4 = np.sum(np.abs(log_fraction_4), axis=-1) / 999
+l1_average_4 = np.average(l1_error_4, axis=-1)
+l1_std_4 = np.std(l1_error_4, axis=-1)
+l1_med_4 = np.median(l1_error_4, axis=-1)
+print('l1 average:', l1_average_4)
+print('l1 standard deviation:', l1_std_4)
+print('l1 median:', l1_med_4)
+time.sleep(360000)
+print((time.perf_counter()-tic)/10000)
+print(times)
+time.sleep(360000)
+plt.loglog(n_vec, times[0, :], 'b-', label=r'$N=1$')
+plt.loglog(n_vec, times[1, :], 'g-', label=r'$N=2$')
+plt.loglog(n_vec, times[2, :], 'y-', label=r'$N=3$')
+plt.loglog(n_vec, times[3, :], 'r-', label=r'$N=4$')
+
+exp, const, _, _, _ = ex.log_linear_regression(x=n_vec, y=times[0, :])
+print(N_vec[0], exp, const)
+plt.loglog(n_vec, const * n_vec**exp, 'b--')
+
+exp, const, _, _, _ = ex.log_linear_regression(x=n_vec, y=times[1, :])
+print(N_vec[1], exp, const)
+plt.loglog(n_vec, const * n_vec**exp, 'g--')
+print(np.average(times[1, :] / times[0, :]))
+
+exp, const, _, _, _ = ex.log_linear_regression(x=n_vec, y=times[2, :])
+print(N_vec[2], exp, const)
+plt.loglog(n_vec, const * n_vec**exp, 'y--')
+print(np.average(times[2, :] / times[1, :]))
+
+exp, const, _, _, _ = ex.log_linear_regression(x=n_vec, y=times[3, :])
+print(N_vec[3], exp, const)
+plt.loglog(n_vec, const * n_vec**exp, 'r--')
+print(np.average(times[3, :] / times[2, :]))
+
+plt.xlabel('Number of intervals')
+plt.ylabel('Time in seconds')
+plt.legend(loc='best')
+plt.title('Computational time of the Log-ODE method\nfor an oscillatory path and a linear vector field')
+plt.show()
+
+
+
+for i in range(10):
+    tree = brt.initialize_brownian_rough_tree(dim=2, T=1, has_time=False, depth=15, accuracy=20, N=4, delete=True)
+    tree.save(directory=f'brownian rough trees/tree {i}')
+
+time.sleep(36000000)
+
+tree = brt.initialize_brownian_rough_tree()
+tree.save(directory='brownian rough trees/gay_dir')
+new_tree = brt.load_brownian_rough_tree('brownian rough trees/gay_dir')
+print(tree.sig(0.235, 0.634, 4))
+print(new_tree.sig(0.235, 0.634, 4))
+time.sleep(3600000)
+
+a = np.array([1])
+b = np.array([2])
+with open('gay.npy', 'wb') as f:
+    np.save(f, a)
+    np.save(f, b)
+with open('gay.npy', 'rb') as f:
+    c = np.load(f)
+    d = np.load(f)
+print(a, b, c, d)
+
+tens = ta.NumericTensor([1, np.array([2, 3]), np.array([[4, 5], [6, 7]])])
+tens.save('here.npy')
+new_tens = ta.load_tensor('here.npy', N=2)
+print(tens)
+print(new_tens)
+time.sleep(3600000)
+
+tree = brt.initialize_brownian_rough_tree(depth=15, accuracy=15)
+print('finished!')
+ex.accuracy_of_level_N_signature(N=4, log_n=25, m=10)
+#print(ex.accuracy_of_signature(m=10))
+time.sleep(360000)
+
+ex.discussion(ex=4, show=True)
+
+print(ex.adaptive_error_fixed_N_discussion(ex=6.4, show=True, save=True, speed=-1))
+print('Finished!')
+time.sleep(360000)
+
+
+ex.error_representation_discussion(ex=0.4, show=True, save=True, speed=-1)
 
 
 def stupid_flow(x, f, y_0, s, T=1, N=2, n=200, h=3e-04):
@@ -29,59 +313,9 @@ def stupid_flow(x, f, y_0, s, T=1, N=2, n=200, h=3e-04):
     return Psi
 
 
-
-
-'''
-f_sym = ex.smooth_2x2_vector_field()
-f_num = ex.smooth_2x2_vector_field(symbolic=False)
-ls = ex.unit_circle().logsig(0, 1, 2)
-print(f_sym.apply(ls)(np.array([0.323, 0.124])))
-print(f_num.apply(ls)(np.array([0.323, 0.124])))
-time.sleep(3600)
-'''
-'''
-if __name__ == '__main__':
-    import cProfile, pstats
-    cProfile.run("ex.ex_smooth_path(solver='fssr', n=100)", "{}.profile".format(__file__))
-    s = pstats.Stats("{}.profile".format(__file__))
-    s.strip_dirs()
-    s.sort_stats("cumtime").print_stats(100)
-time.sleep(3600)
-'''
-
-'''
-y, _ = lo.solve_fixed_adj_full(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=np.array([1]), N=1, partition=np.linspace(0, 1, 6))
-y, _ = lo.solve_fixed_adj_full(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=ta.sig_first_level_num(np.array([1]), 1), N=1, partition=np.linspace(0, 1, 6))
-print(lo.solve_fixed_error_representation(x=ex.time_rough_path(), f=ex.linear_1x1_vector_field(), y_0=np.array([1]), N=1, partition=np.linspace(0, 1, 6)))
-'''
-'''
-x = ex.unit_circle(param=1)
-x = ex.unit_circle(param=1, symbolic=False)
-f = ex.smooth_2x2_vector_field()
-f.new_derivative()
-print(f.f[1])
-sigma = lambda x: 1/(1+np.exp(-x))
-a = lambda y: y[0] - 2*y[1]
-second_level = lambda y: -0.6142 * np.array([y[1] + sigma(a(y)) + sigma(y[1]),
-                                            sigma(a(y))*sigma(y[1])*(1-sigma(y[1])) + (y[0]-y[1]+2*sigma(y[1]))*sigma(a(y))*(1-sigma(a(y)))])
-first_level_0 = lambda y: np.array([-1.5*(y[1]-y[0]) - 0.8660*y[1], -1.5*sigma(y[1]) + 0.8660*sigma(a(y))])
-first_level_1 = lambda y: np.array([1.7321*y[1], -1.7321*sigma(a(y))])
-first_level_2 = lambda y: np.array([1.5*(y[1]-y[0]) - 0.8660*y[1], 1.5*sigma(y[1]) + 0.8660*sigma(a(y))])
-true_vf = lambda t, y: 2*np.pi*np.array([-np.sin(2*np.pi*t)*(y[1]-y[0]) - np.cos(2*np.pi*t)*y[1], -np.sin(2*np.pi*t)*sigma(y[1]) + np.cos(2*np.pi*t)*sigma(a(y))])
-print(integrate.solve_ivp(fun=true_vf, t_span=(0, 1/3), y0=np.array([0, 0])).y[:, -1])
-print(integrate.solve_ivp(fun=lambda t, y: first_level_0(y) + second_level(y), t_span=(0, 1), y0=np.array([0, 0])).y[:, -1])
-# print(integrate.solve_ivp(fun=lambda t, y: np.array([2*y[0] - 2*y[1], -2*sigma(y[1])]), t_span=(0, 1), y0=np.array([0, 0])).y[:, -1])
-# print(integrate.solve_ivp(fun=lambda t, y: -np.array([2*y[0] - 2*y[1], -2*sigma(y[1])]), t_span=(0, 1), y0=np.array([1.92961986, -0.7920599])).y[:, -1])
-
-print(lo.solve_fixed_error_representation(x=ex.unit_circle(param=1), f=ex.smooth_2x2_vector_field(), y_0=np.array([0, 0]), N=2, partition=np.linspace(0, 1, 4)))
-time.sleep(3600)
-'''
 x = ex.unit_circle()
-# print(np.argwhere(np.array([0, 1, 2, 3]) > 1).flatten())
-
-f = ex.smooth_2x2_vector_field(symbolic=False)
-# x = ex.rough_fractional_Brownian_path(H=0.5, n=1000*2000, dim=2, T=1., p=2.2, var_steps=15, norm=ta.l1,
-#                                             save_level=3)
+f = ex.smooth_2x2_vector_field()
+# x = ex.rough_fractional_Brownian_path(H=0.5, n=1000*2000, dim=2, T=1., p=2.2, var_steps=15, norm=ta.l1, save_level=3)
 print('constructed')
 
 '''
@@ -90,41 +324,14 @@ print('finished')
 time.sleep(3600)
 '''
 
-
-y_on_partition, _, _ = ex.ex_smooth_path(solver='fssr', N=2, n=200, x=x, f=f, speed=0)
-y_1 = y_on_partition[1, :]
-partition = np.linspace(1/200, 2/200, 101)
-y, _ = lo.solve_fixed(x, f, y_1, N=2, partition=partition)
-z = np.zeros((101, 4))
-z[:, 2:] = y.transpose()
-z[:, :2] = np.array([x.at(partition[i], 1)[1] for i in range(101)])
-z_rp = rp.RoughPathDiscrete(partition, z)
-print(f'stupidly computed z: {z_rp.sig(1/200, 2/200, 2)}')
-sig = lambda x: 1/(1+np.exp(-x))
-matrix_1 = lambda y: np.array([[-1, 1], [0, sig(y[1])*(1-sig(y[1]))]])
-matrix_2 = lambda y: np.array([[0, -1], [sig(y[0]-2*y[1])*(1-sig(y[0]-2*y[1])), -2*sig(y[0]-2*y[1])*(1-sig(y[0]-2*y[1]))]])
-h_vec = np.zeros((2, 2, 100))
-for i in range(100):
-    h_vec[:, :, i] = matrix_1(y[:, i]) * (x.sig(partition[i], partition[i+1], 1)[1][0]) \
-                     + matrix_2(y[:, i]) * (x.sig(partition[i], partition[i+1], 1)[1][1])
-print('Stupidly computed h, twice:')
-print(np.sum(h_vec, axis=-1))
-print(np.sum(h_vec, axis=-1).flatten())
-
-
-
-print(f'stupidly computed flow: {stupid_flow(x, f, np.zeros(2), 0)}')
-print(f'stupidly computed flow, different h: {stupid_flow(x, f, np.zeros(2), 0, h=1e-04)}')
 tic = time.perf_counter()
 true_solution, _, true_time = ex.ex_smooth_path(N=3, n=1000, x=x, f=f, speed=0)
 toc = time.perf_counter()
 print(f'solving for true solution: {toc-tic}')
 true_solution = true_solution[:, -1]
 print(true_solution, true_time)
-N_vec = np.array([2])
-# N_vec = np.array([1, 2, 3])
-n_vec = np.array([200])
-# n_vec = np.array([16, 23, 32, 45, 64, 91, 128, 181, 256, 362])
+N_vec = np.array([1, 2, 3])
+n_vec = np.array([16, 23, 32, 45, 64, 91, 128, 181, 256, 362])
 abs_global_error = np.zeros(len(n_vec))
 abs_true_error = np.zeros(len(n_vec))
 abs_difference = np.zeros(len(n_vec))
@@ -134,8 +341,6 @@ for i in range(len(N_vec)):
     for j in range(len(n_vec)):
         print(f'n={n_vec[j]}')
         y, local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=N_vec[i], n=n_vec[j], x=x, f=f, speed=0)
-
-        print(f'penultimate stupidly computed flow: {stupid_flow(x, f, y[-2, :], 199 / 200)}')
         global_error = np.sum(local_errors, axis=0)
         true_error = true_solution - y[-1, :]
         abs_global_error[j] = ta.l1(global_error)
@@ -153,154 +358,33 @@ for i in range(len(N_vec)):
     plt.show()
 
 
-
-
-y, propagated_local_errors, tictoc = ex.ex_smooth_path(solver='fssr', N=3)
-print(y)
-print(propagated_local_errors)
-global_error = np.sum(propagated_local_errors, axis=0)
-print(global_error)
-true_sol = np.array([-0.95972823, -0.97375321])
-print(true_sol - y[-1, :])
-print(tictoc)
+ex.discussion(ex=0, show=False, save=True)
 time.sleep(360000)
-
-tens = [0, np.array([1, 2, 3]), np.array([[4, 5, 6], [7, 8, 9], [10, 11, 12]]),
-        np.array([[[13, 14, 15], [16, 17, 18], [19, 20, 21]],
-                  [[22, 23, 24], [25, 26, 27], [28, 29, 30]],
-                  [[31, 32, 33], [34, 35, 36], [37, 38, 39]]])]
-
-tens = ta.NumericTensor(tens)
-print(tens)
-print(tens.project_space([2, 0]))
-
-tens = [0, sp.Array([1, 2, 3]), sp.Array([[4, 5, 6], [7, 8, 9], [10, 11, 12]]),
-        sp.Array([[[13, 14, 15], [16, 17, 18], [19, 20, 21]],
-                  [[22, 23, 24], [25, 26, 27], [28, 29, 30]],
-                  [[31, 32, 33], [34, 35, 36], [37, 38, 39]]])]
-
-tens = ta.SymbolicTensor(tens)
-print(tens)
-print(tens.project_space([2, 0]))
-
+ex.discussion(ex=1.02785, show=False, save=True)
 time.sleep(360000)
-
-
-ex.discussion(example=1.24, show=True, save=False, sym_path=True, sym_vf=False, full=1)
-print('Finished')
+ex.ex_third_level(N=0, plot=False, sig_steps=10000, atol=1e-06, rtol=1e-05, sym_vf=True, param=1000)
 time.sleep(360000)
-
-vals, n = ex.asymmetric_Brownian_path(500, 1)
-plt.plot(np.linspace(0, 1, n+1), vals)
-plt.show()
-
-ex.discussion(example=5.5, show=False, save=True, sym_path=True, sym_vf=True)
+ex.discussion(ex=2.01562, show=False, save=True)
 time.sleep(360000)
-
-# Sanity check
-t = sp.symbols('t')
-path = sp.Array([sp.cos(2 * 4 * sp.pi * t) / sp.sqrt(4), sp.sin(2 * 4 * sp.pi * t) / sp.sqrt(4)])
-x = rp.RoughPathSymbolic(path=path, t=t, p=1, var_steps=15, norm=ta.l1)
-
-path_ = lambda t: np.array([np.cos(2 * np.pi * 4 * t), np.sin(2 * np.pi * 4 * t)]) / np.sqrt(4)
-x_ = rp.RoughPathContinuous(path=path_, sig_steps=1000, p=1, var_steps=15, norm=ta.l1)
-
-y, z = sp.symbols('y z')
-f = sp.Array([[z - y, -z], [1/(1+sp.exp(-z)), 1/(1+sp.exp(-(y - 2 * z)))]])
-vec_field = vf.VectorFieldSymbolic(f=[f], norm=ta.l1, variables=[y, z])
-
-f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
-                           1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
-vec_field_ = vf.VectorFieldNumeric(f=[f], h=1e-07, norm=ta.l1)
-
-print(vec_field.apply(x.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
-print(vec_field_.apply(x_.logsig(0.1, 0.143, 2), True)(np.array([-0.3, -0.52])))
-
-ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
+ex.discussion(ex=0, show=False, save=True)
 time.sleep(360000)
-ex.discussion(example=1.02785, show=False, save=True, sym_path=True, sym_vf=True)
+ex.ex_third_level(N=0, plot=False, sig_steps=2000, sym_vf=True, param=64, atol=1e-06, rtol=1e-05)
 time.sleep(360000)
-ex.ex_third_level(N=0, plot=False, sig_steps=10000, atol=1e-06, rtol=1e-05, sym_path=False, sym_vf=True, param=1000)
+ex.discussion(ex=0.3, show=False, save=True)
 time.sleep(360000)
-ex.discussion(example=2.01562, show=False, save=True, sym_path=True, sym_vf=True)
+ex.discussion(ex=0.4, show=False, save=True)
 time.sleep(360000)
-ex.discussion(example=0, show=False, save=True, sym_path=True, sym_vf=True)
+ex.discussion(ex=0.5, show=False, save=True)
 time.sleep(360000)
-ex.ex_third_level(N=0, plot=False, sig_steps=2000, sym_path=True, sym_vf=True, param=64, atol=1e-06, rtol=1e-05)
-time.sleep(360000)
-ex.discussion(example=0.3, show=False, save=True, sym_path=False, sym_vf=True)
-time.sleep(360000)
-ex.discussion(example=0.4, show=False, save=True, sym_path=False, sym_vf=True)
-time.sleep(360000)
-ex.discussion(example=0.5, show=False, save=True, sym_path=False, sym_vf=True)
-time.sleep(360000)
-ex.discussion(example=0.75, show=False, save=True, sym_path=False, sym_vf=True)
+ex.discussion(ex=0.75, show=False, save=True)
 time.sleep(3600)
-ex.discussion(example=1, save=True, show=False, sym_path=False, sym_vf=True)
+ex.discussion(ex=1, save=True, show=False)
 time.sleep(3600)
-ex.discussion(example=1.02785, save=True, show=False, sym_path=True, sym_vf=True)
+ex.discussion(ex=1.02785, save=True, show=False)
 time.sleep(3600)
-ex.discussion(example=1.23, save=True, show=False, sym_path=False, sym_vf=True)
+ex.discussion(ex=1.23, save=True, show=False)
 time.sleep(3600)
-ex.discussion(example=1.23, save=False, show=False, sym_path=True, sym_vf=True)
-time.sleep(3600)
-
-
-def con(N, p, d):
-    """
-    Returns the constant in the error bound for a single step of the Log-ODE method.
-    :param N: Degree of the method
-    :return: The constant
-    """
-    if p == -1:
-        return 0.34 * (7 / 3.) ** (N + 1)
-    if p == -2:
-        return 25 * d / scipy.special.gamma((N + 1) / -p + 1) + 0.081 * (7 / 3) ** (N + 1)
-    if p == -3:
-        return 1000 * d ** 3 / scipy.special.gamma((N + 1) / -p + 1) + 0.038 * (7 / 3) ** (N + 1)
-    if 1 <= p < 2:
-        C = 1
-    elif 2 <= p < 3:
-        C = 3 * np.sqrt(d)
-    elif 3 <= p < 4:
-        C = 7 * d
-    else:
-        C = 21 * d ** (9 / 4)
-    beta = rp.beta(p)
-    return (1.13 / beta) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(int(p)) / scipy.special.gamma(
-        (N + 1) / p + 1) \
-           + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
-
-
-print(con(3, -1, 2), con(3, 1, 2))
-print(con(3, -2, 2), con(3, 2, 2))
-print(con(3, -3, 2), con(3, 3, 2))
-var_steps = 200
-x = ex.rough_fractional_Brownian_path(H=0.5, n=10*var_steps, dim=2, T=1., var_steps=var_steps, norm=ta.l1, save_level=2)
-ps = np.linspace(2., 4., 100)[:-1]
-constants = np.zeros(99)
-vars = np.zeros(99)
-omegas = np.zeros(99)
-
-for i in range(len(ps)):
-    print(i)
-    constants[i] = con(3, ps[i], 2)
-    if i == 0:
-        vars[i] = np.amax(x.p_variation(0., 1., ps[i], var_steps=var_steps, norm=ta.l1))
-    else:
-        vars[i] = np.amax(x.p_variation(0., 1., ps[i], var_steps=var_steps, norm=ta.l1))
-    omegas[i] = x.omega(0., 1., ps[i], var_steps=var_steps)
-plt.loglog(ps, constants, label='error constant')
-plt.loglog(ps, vars, label='p-variation')
-plt.loglog(ps, omegas/10000, label='control function')
-plt.loglog(ps, constants*omegas/100000, 'k-', label='error')
-plt.title("Varying p for Brownian motion")
-# plt.ylim([0, 10])
-plt.legend(loc='best')
-plt.show()
-
-
-
+ex.discussion(ex=1.23, save=False, show=False)
 time.sleep(3600)
 
 
