@@ -240,6 +240,23 @@ def smooth_fractional_path(H, n, p=0., var_steps=15, norm=ta.l1, save_level=0):
                                   sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
 
 
+def smooth_path_singularity(symbolic=True, norm=ta.l1, p=1., var_steps=15, N=1, sig_steps=2000):
+    if symbolic:
+        t = sp.symbols('t')
+        path = sp.Array([sp.Integer(1) / (sp.Integer(5000)*(t-sp.Rational(1, 2))*(t-sp.Rational(1, 2)) + sp.Integer(1)),
+                         t])
+        x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
+        if N > 1:
+            for _ in range(1, N):
+                print('here')
+                x.new_level()
+    else:
+        path = lambda t: np.array([1 / (5000*(t-0.5)**2 + 1), t])
+        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+
+    return x
+
+
 def linear_1x1_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
     if symbolic:
         y = sp.symbols('y')
@@ -281,6 +298,38 @@ def smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
     else:
         f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
                                    1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
+
+    return vec_field
+
+
+def simple_smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    if symbolic:
+        y, z = sp.symbols('y z')
+        f = sp.Array([[z - y, -z], [sp.tanh(-z), sp.cos(-(y - 2 * z))]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   np.tanh(-y[1]) * x[0] + np.cos(-(y[0] - 2 * y[1])) * x[1]])
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
+
+    return vec_field
+
+
+def smooth_2x2_vector_field_singularity(symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    if symbolic:
+        y, z = sp.symbols('y z')
+        f = sp.Array([[z - y, -z], [1 + 20/(1000*(y+1)*(y+1)+1), 20/(1000*(z+1)*(z+1)+1)]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
+                                   np.tanh(-y[1]) * x[0] + np.cos(-(y[0] - 2 * y[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
 
     return vec_field

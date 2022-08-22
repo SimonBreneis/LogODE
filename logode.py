@@ -1,4 +1,3 @@
-import math
 import time
 import numpy as np
 import scipy
@@ -6,6 +5,12 @@ from scipy import integrate, special, stats
 import roughpath as rp
 import vectorfield as vf
 import tensoralgebra as ta
+
+
+def invert_permutation(p):
+    s = np.empty_like(p)
+    s[p] = np.arange(p.size)
+    return s
 
 
 def log_linear_regression(x, y):
@@ -533,6 +538,29 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32,
                                                        method=method, speed=speed)
 
 
+def update_grid(N, part, incr_deg_ind, div_int_ind):
+    n = len(part) - 1
+    additional_times = (part[div_int_ind] + part[div_int_ind + 1]) / 2
+    new_partition = np.zeros(n + 1 + len(additional_times))
+    new_N = np.zeros(n + len(additional_times), dtype=int)
+    new_partition[:n + 1] = part
+    new_N[:n] = N
+    new_N[incr_deg_ind] += 1
+    new_partition[n + 1:] = additional_times
+    new_N[n:] = N[div_int_ind]
+    permutation = np.argsort(new_partition)
+    new_partition = new_partition[permutation]
+    last_ind = permutation[-1]
+    reduced_permutation = permutation[:-1]
+    overshoot_ind = np.where(reduced_permutation > last_ind)
+    reduced_permutation[overshoot_ind] = reduced_permutation[overshoot_ind] - 1
+    new_N = new_N[reduced_permutation]
+    inverted_permutation = invert_permutation(reduced_permutation)
+    new_increase_degree_ind = inverted_permutation[incr_deg_ind]
+    new_divide_interval_ind = inverted_permutation[div_int_ind]
+    return new_N, new_partition, new_increase_degree_ind, new_divide_interval_ind
+
+
 def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-04, rtol=1e-02,
                                               method='RK45', speed=-1):
     """
@@ -559,97 +587,82 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
                                                            method=method, speed=speed)
     atol = atol/3
     rtol = rtol/3
-    partition = np.linspace(0, T, 4)
+    part = np.linspace(0, T, 4)
     for N in range(N_min, N_max+1):
         # just running the solver once for each possible N because there might be initial computational costs
         # associated with running some degree N for the first time
         print(f'N={N}')
-        solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=1000*atol, rtol=1000*rtol,
+        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, atol=1000*atol, rtol=1000*rtol,
                                          method=method, speed=speed)
-    partition = np.linspace(0, T, n+1)  # starting partition
+
+    tic = time.perf_counter()
+    part = np.linspace(0, T, n+1)  # starting partition
     N = np.ones(n, dtype=int) * N_min  # for each interval, gives the current degree
 
-    interval_error_estimates = np.zeros((N_max-N_min+1, 1024))  # for each degree N, is a vector of the previously
-    # observed relative changes of the local error when going from one interval to two
-    n_interval_error_estimates = np.zeros(N_max-N_min+1, dtype=int)  # for each degree N, the number of previously
-    # observed relative changes of the local error when going from one interval to two
-    degree_time_estimates = np.zeros((N_max-N_min, 1024))  # for each degree N (up to the last), is a vector
+    int_err_est = np.zeros((N_max-N_min, 1024))  # for each degree N (up to the last), is a vector of the
+    # previously observed relative changes of the local error when going from one interval to two
+    n_int_err_est = np.zeros(N_max-N_min, dtype=int)  # for each degree N (up to the last), the number of
+    # previously observed relative changes of the local error when going from one interval to two
+    deg_time_est = np.zeros((N_max-N_min, 1024))  # for each degree N (up to the last), is a vector
     # of the previously observed relative changes of the computational time when increasing the degree by one
-    n_degree_time_estimates = np.zeros(N_max-N_min, dtype=int)  # for each degree N (up to the last), the number
+    n_deg_time_est = np.zeros(N_max-N_min, dtype=int)  # for each degree N (up to the last), the number
     # of previously observed relative changes of the computational time when increasing the degree by one
-    degree_error_estimates = np.zeros((N_max-N_min, 1024))  # for each degree N (up to the last), is a vector
+    deg_err_est = np.zeros((N_max-N_min, 1024))  # for each degree N (up to the last), is a vector
     # of the previously observed relative changes of the local error when increasing the degree by one. more precisely,
     # always computes the fraction e(N+1) / e(N)**((N+2)/N+1))
-    n_degree_error_estimates = np.zeros(N_max-N_min, dtype=int)  # for each degree N (up to the last), the
+    n_deg_err_est = np.zeros(N_max-N_min, dtype=int)  # for each degree N (up to the last), the
     # number of previously observed relative changes of the local error when increasing the degree by one
-    interval_error_estimators = 2. ** (1 - (np.arange(N_min, N_max+1)+1)/p)  # for each degree N, is an estimator for
-    # the relative change of the local error when going from one interval to two
-    degree_time_estimators = 1. * np.arange(N_min, N_max) * x.dim()**np.arange(N_min, N_max)  # for each degree N (up to
+    int_err_estrs = 2. ** (1 - (np.arange(N_min, N_max)+1)/p)  # for each degree N (up to the last), is an
+    # estimator for the relative change of the local error when going from one interval to two
+    deg_time_estrs = 1. * np.arange(N_min, N_max) * x.dim()**np.arange(N_min, N_max)  # for each degree N (up to
     # the last), is an estimator for the relative change of the computational time when increasing the degree by one
-    degree_error_estimators = -np.ones(N_max-N_min)  # for each degree N (up to the last), is an estimator
+    deg_err_estrs = -np.ones(N_max-N_min)  # for each degree N (up to the last), is an estimator
     # for the relative change of the local error when increasing the degree by one
 
-    def add_degree_estimates(N_ind, partition_ind):
-        s = partition[partition_ind]
-        t = partition[partition_ind+1]
-        y_s = y[partition_ind, :]
-        '''
-        y_deg, _, time_vec_ = solve_fixed_adj_full(x=x, f=f, y_0=y_s, partition=np.linspace(s, t, 2), N=N_min+N_ind+1,
-                                                   atol=atol_, rtol=rtol_, method=method, compute_bound=False,
-                                                   N_sol=np.amax(N))
-        degree_time_estimates[N_ind, n_degree_time_estimates[N_ind]] = time_vec_[0] / time_vec[partition_ind]
-        n_degree_time_estimates[N_ind] += 1
-        y_deg_refined, _, _ = solve_fixed(x=x, f=f, y_0=y_s, N=N_min+N_ind+1, partition=np.linspace(s, t, 17),
-                                          atol=atol_/16, rtol=rtol_/16, method=method, compute_bound=False)
-        degree_error_estimates[N_ind, n_degree_error_estimates[N_ind]] = ta.l1(y_deg_refined[-1, :] - y_deg.at(t, 1)[1][x.dim():]) / loc_err[partition_ind]**((N_min+N_ind+2)/(N_min+N_ind+1))
-        n_degree_error_estimates[N_ind] += 1
-        '''
-        y_, _, loc_err_, time_vec_ = solve_fixed_error_representation(x=x, f=f, y_0=y_s, N=N_min+N_ind+1,
-                                                                      partition=np.array([s, t]),
-                                                                      atol=atol/(len(partition)-1),
-                                                                      rtol=rtol/(len(partition)-1), method=method,
-                                                                      speed=speed)
-        degree_time_estimates[N_ind, n_degree_time_estimates[N_ind]] = time_vec_[0] / time_vec[partition_ind]
-        n_degree_time_estimates[N_ind] += 1
-        degree_error_estimates[N_ind, n_degree_error_estimates[N_ind]] = loc_err_[0] / loc_err[partition_ind] ** ((N_min + N_ind + 2) / (N_min + N_ind + 1))
-        n_degree_error_estimates[N_ind] += 1
+    def solve_(N_, part_, y_0_=y_0):
+        return solve_fixed_error_representation(x=x, f=f, y_0=y_0_, N=N_, partition=part_,
+                                                atol=atol/(len(part_)-1), rtol=rtol/(len(part_)-1),
+                                                method=method, speed=speed)
 
-    def update_estimators():
+    def add_deg_est(N_ind, part_ind):
+        s = part[part_ind]
+        t = part[part_ind + 1]
+        y_s = y[part_ind, :]
+        y_, _, loc_err_, times_ = solve_(y_0_=y_s, N_=N_min+N_ind+1, part_=np.array([s, t]))
+        deg_time_est[N_ind, n_deg_time_est[N_ind]] = times_[0] / times[part_ind]
+        n_deg_time_est[N_ind] += 1
+        deg_err_est[N_ind, n_deg_err_est[N_ind]] = loc_err_[0] / loc_err[part_ind] ** ((N_min + N_ind + 2) / (N_min + N_ind + 1))
+        n_deg_err_est[N_ind] += 1
+
+    def update_estrs():
         for i in range(N_max-N_min):
-            if n_degree_error_estimates[i] > 0:
-                degree_error_estimators[i] = np.median(degree_error_estimates[i, :n_degree_error_estimates[i]])
-            if n_degree_time_estimates[i] > 0:
-                degree_time_estimators[i] = np.median(degree_time_estimates[i, :n_degree_time_estimates[i]])
-        for i in range(N_max-N_min+1):
-            n_est = n_interval_error_estimates[i]
+            if n_deg_err_est[i] > 0:
+                deg_err_estrs[i] = np.median(deg_err_est[i, :n_deg_err_est[i]])
+            if n_deg_time_est[i] > 0:
+                deg_time_estrs[i] = np.median(deg_time_est[i, :n_deg_time_est[i]])
+        for i in range(N_max-N_min):
+            n_est = n_int_err_est[i]
             if n_est >= 2:
-                possible_estimator = np.median(interval_error_estimates[i, :n_est])
+                possible_estimator = np.median(int_err_est[i, :n_est])
                 log_estimator = np.log(possible_estimator)
-                std_log_estimator = np.std(interval_error_estimates[i, :n_est])
+                std_log_estimator = np.std(int_err_est[i, :n_est])
                 lhs = log_estimator + 1.65 * std_log_estimator / np.sqrt(n_est)
                 rhs = -((N_min+i+1)/p - 1) * np.log(2) / np.log(n_est)
                 if lhs < rhs:
-                    interval_error_estimators[i] = possible_estimator
-
-    def invert_permutation(p):
-        s = np.empty_like(p)
-        s[p] = np.arange(p.size)
-        return s
+                    int_err_estrs[i] = possible_estimator
 
     def enlarge_array(a):
         temp = np.zeros((a.shape[0], 2 * a.shape[1]))
         temp[:, :a.shape[1]] = a
         return temp
 
-    y, prop_loc_err, loc_err, time_vec = solve_fixed_error_representation(x, f, y_0, N=N, partition=partition,
-                                                                          atol=atol/len(partition),
-                                                                          rtol=rtol/len(partition), method=method,
-                                                                          speed=speed)
+    y, prop_loc_err, loc_err, times = solve_(N_=N, part_=part)
     global_err = np.sum(prop_loc_err, axis=0)
     abs_err = ta.l1(global_err)
     rel_err = abs_err/x.norm(y[-1, :]) if x.norm(y[-1, :]) > atol else rtol/2
     if abs_err < atol and rel_err < rtol:
-        return partition, y, prop_loc_err
+        print('Total time:', time.perf_counter() - tic)
+        return part, y, prop_loc_err, N
 
     while abs_err > atol or rel_err > rtol:
         print(abs_err, rel_err)
@@ -657,12 +670,12 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
         for i in range(N_max-N_min+1):
             print(f'{N_min+i}: {np.sum(N == N_min+i)}')
         loc_N_max = np.amax(N)
-        if not loc_N_max == N_max and n_degree_error_estimates[loc_N_max-N_min] < 100:
+        if not loc_N_max == N_max and n_deg_err_est[loc_N_max-N_min] < 100:
             # we may wish to increase the degree but do not have a good error estimator yet
             critical_indices = np.nonzero(N == loc_N_max)[0]  # indices of the partition for which we do not have
             # an estimator
             if len(critical_indices) == 1:
-                add_degree_estimates(N_ind=loc_N_max-N_min, partition_ind=critical_indices[0])
+                add_deg_est(N_ind=loc_N_max-N_min, part_ind=critical_indices[0])
             else:
                 i = np.random.randint(0, len(critical_indices))
                 j = np.random.randint(0, len(critical_indices))
@@ -671,87 +684,194 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
                         j = j-1
                     else:
                         j = j+1
-                add_degree_estimates(N_ind=loc_N_max-N_min, partition_ind=critical_indices[i])
-                add_degree_estimates(N_ind=loc_N_max-N_min, partition_ind=critical_indices[j])
-        update_estimators()
+                add_deg_est(N_ind=loc_N_max-N_min, part_ind=critical_indices[i])
+                add_deg_est(N_ind=loc_N_max-N_min, part_ind=critical_indices[j])
+        update_estrs()
+        '''
         print(f'degree error estimators: {degree_error_estimators}')
         print(degree_error_estimates[:, :20])
         print(f'degree time estimators: {degree_time_estimators}')
         print(degree_time_estimates[:, :20])
         print(f'interval error estimators: {interval_error_estimators}')
         print(interval_error_estimates[:, :20])
+        '''
 
-        n = len(partition)-1
+        n = len(part)-1
         abs_prop_loc_err = ta.l1(prop_loc_err, axis=1)
-        relevant_ind = np.argwhere(np.logical_and(abs_prop_loc_err >= atol/n, (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol else rtol / (2*n)) >= rtol/n)).flatten()
+        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol/n, (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol else rtol / (2*n)) >= rtol/n)).flatten()
         interesting_ind = relevant_ind[N[relevant_ind] != N_max]
-        e_N = degree_error_estimators[N[interesting_ind]-N_min] * loc_err[interesting_ind]**(1/N[interesting_ind])
-        e_I = interval_error_estimators[N[interesting_ind]-N_min]
-        t_N = degree_time_estimators[N[interesting_ind]-N_min]
-        increase_degree = 2**(np.log(e_N) / np.log(e_I)) > t_N
-        increase_degree_ind = interesting_ind[increase_degree]
-        divide_interval_ind = interesting_ind[np.invert(increase_degree)]
-        divide_interval_ind = np.concatenate((divide_interval_ind, relevant_ind[N[relevant_ind] == N_max]))
-        additional_times = (partition[divide_interval_ind] + partition[divide_interval_ind+1])/2
-        new_partition = np.zeros(n + 1 + len(additional_times))
-        new_N = np.zeros(n + len(additional_times), dtype=int)
-        new_partition[:n+1] = partition
-        new_N[:n] = N
-        new_N[increase_degree_ind] += 1
-        new_partition[n+1:] = additional_times
-        new_N[n:] = N[divide_interval_ind]
-        permutation = np.argsort(new_partition)
-        new_partition = new_partition[permutation]
-        reduced_permutation = permutation[permutation != len(new_partition)-1]
-        new_N = new_N[reduced_permutation]
-        inverted_permutation = invert_permutation(reduced_permutation)
-        new_increase_degree_ind = inverted_permutation[increase_degree_ind]
-        new_divide_interval_ind = inverted_permutation[divide_interval_ind]
+        e_N = deg_err_estrs[N[interesting_ind]-N_min] * loc_err[interesting_ind]**(1/N[interesting_ind])
+        e_I = int_err_estrs[N[interesting_ind]-N_min]
+        t_N = deg_time_estrs[N[interesting_ind]-N_min]
+        incr_deg = 2**(np.log(e_N) / np.log(e_I)) > t_N
+        incr_deg_ind = interesting_ind[incr_deg]
+        div_int_ind = interesting_ind[np.invert(incr_deg)]
+        div_int_ind = np.concatenate((div_int_ind, relevant_ind[N[relevant_ind] == N_max]))
+        new_N, new_part, new_incr_deg_ind, new_div_int_ind = update_grid(N=N, part=part, incr_deg_ind=incr_deg_ind,
+                                                                         div_int_ind=div_int_ind)
 
-        new_y, new_prop_loc_err, new_loc_err, new_time_vec = solve_fixed_error_representation(x, f, y_0, N=new_N,
-                                                                                              partition=new_partition,
-                                                                                              atol=atol/len(new_partition),
-                                                                                              rtol=rtol/len(new_partition),
-                                                                                              method=method,
-                                                                                              speed=speed)
+        new_y, new_prop_loc_err, new_loc_err, new_times = solve_(N_=new_N, part_=new_part)
 
-        new_interval_error_estimates = (new_loc_err[new_divide_interval_ind] + new_loc_err[new_divide_interval_ind+1]) / loc_err[divide_interval_ind]
-        for i in range(N_max-N_min+1):
-            local_new_interval_error_estimates = new_interval_error_estimates[N[divide_interval_ind] == N_min+i]
-            if n_interval_error_estimates[i] + len(local_new_interval_error_estimates) > len(interval_error_estimates[i, :]):
-                interval_error_estimates = enlarge_array(interval_error_estimates)
-            interval_error_estimates[i, n_interval_error_estimates[i]:n_interval_error_estimates[i] + len(local_new_interval_error_estimates)] = local_new_interval_error_estimates
-            n_interval_error_estimates[i] = n_interval_error_estimates[i] + len(local_new_interval_error_estimates)
-
-        new_degree_time_estimates = new_time_vec[new_increase_degree_ind] / time_vec[increase_degree_ind]
+        new_int_err_est = (new_loc_err[new_div_int_ind] + new_loc_err[new_div_int_ind+1]) / loc_err[div_int_ind]
         for i in range(N_max-N_min):
-            local_new_degree_time_estimates = new_degree_time_estimates[N[increase_degree_ind] == N_min+i]
-            if n_degree_time_estimates[i] + len(local_new_degree_time_estimates) > len(degree_time_estimates[i, :]):
-                degree_time_estimates = enlarge_array(degree_time_estimates)
-            degree_time_estimates[i, n_degree_error_estimates[i]:n_degree_time_estimates[i] + len(local_new_degree_time_estimates)] = local_new_degree_time_estimates
-            n_degree_time_estimates[i] = n_degree_time_estimates[i] + len(local_new_degree_time_estimates)
+            loc_new_int_err_est = new_int_err_est[N[div_int_ind] == N_min+i]
+            if n_int_err_est[i] + len(loc_new_int_err_est) > len(int_err_est[i, :]):
+                int_err_est = enlarge_array(int_err_est)
+            int_err_est[i, n_int_err_est[i]:n_int_err_est[i] + len(loc_new_int_err_est)] = loc_new_int_err_est
+            n_int_err_est[i] = n_int_err_est[i] + len(loc_new_int_err_est)
 
-        new_degree_error_estimates = new_loc_err[new_increase_degree_ind] / loc_err[increase_degree_ind] ** ((N[increase_degree_ind]+2)/(N[increase_degree_ind]+1))
+        new_deg_time_est = new_times[new_incr_deg_ind] / times[incr_deg_ind]
         for i in range(N_max-N_min):
-            local_new_degree_error_estimates = new_degree_error_estimates[N[increase_degree_ind] == N_min+i]
-            if n_degree_error_estimates[i] + len(local_new_degree_error_estimates) > len(degree_error_estimates[i, :]):
-                degree_error_estimates = enlarge_array(degree_error_estimates)
-            degree_error_estimates[i, n_degree_error_estimates[i]:n_degree_error_estimates[i] + len(local_new_degree_error_estimates)] = local_new_degree_error_estimates
-            n_degree_error_estimates[i] = n_degree_error_estimates[i] + len(local_new_degree_error_estimates)
+            loc_new_deg_time_est = new_deg_time_est[N[incr_deg_ind] == N_min+i]
+            if n_deg_time_est[i] + len(loc_new_deg_time_est) > len(deg_time_est[i, :]):
+                deg_time_est = enlarge_array(deg_time_est)
+            deg_time_est[i, n_deg_err_est[i]:n_deg_time_est[i] + len(loc_new_deg_time_est)] = loc_new_deg_time_est
+            n_deg_time_est[i] = n_deg_time_est[i] + len(loc_new_deg_time_est)
 
-        update_estimators()
-        partition = new_partition
+        new_deg_err_est = new_loc_err[new_incr_deg_ind] / loc_err[incr_deg_ind] ** ((N[incr_deg_ind]+2)/(N[incr_deg_ind]+1))
+        for i in range(N_max-N_min):
+            loc_new_deg_err_est = new_deg_err_est[N[incr_deg_ind] == N_min+i]
+            if n_deg_err_est[i] + len(loc_new_deg_err_est) > len(deg_err_est[i, :]):
+                deg_err_est = enlarge_array(deg_err_est)
+            deg_err_est[i, n_deg_err_est[i]:n_deg_err_est[i] + len(loc_new_deg_err_est)] = loc_new_deg_err_est
+            n_deg_err_est[i] = n_deg_err_est[i] + len(loc_new_deg_err_est)
+
+        update_estrs()
+        part = new_part
         N = new_N
         y = new_y
         loc_err = new_loc_err
         prop_loc_err = new_prop_loc_err
-        time_vec = new_time_vec
+        times = new_times
 
         global_err = np.sum(prop_loc_err, axis=0)
         abs_err = ta.l1(global_err)
         rel_err = abs_err / x.norm(y[-1, :]) if x.norm(y[-1, :]) > atol else rtol / 2
+        print(f'absolute error {abs_err}, where we have a tolerance of {atol}')
+        print(f'relative error {rel_err}, where we have a tolerance of {rtol}')
 
-    return partition, y, prop_loc_err, N
+    print('Total time:', time.perf_counter() - tic)
+    return part, y, prop_loc_err, N
+
+
+def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-04, rtol=1e-02,
+                                                   method='RK45', speed=-1):
+    """
+    Implementation of the Log-ODE method. Uses the a-posteriori error representation.
+    :param x: Rough path
+    :param f: Vector field
+    :param y_0: Initial condition
+    :param N_min: Minimal degree of the Log-ODE method
+    :param N_max: Maximal degree of the Log-ODE method
+    :param T: Final time
+    :param n: Initial number of time intervals
+    :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
+    :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
+    :param method: Method for solving the ODEs
+    :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
+        estimated global error. If speed is -1, automatically finds a good value for speed
+    :return: Solution on partition points
+    """
+    p = x.p
+    if N_min + 1 <= p:
+        N_min = int(np.ceil(p-0.999))
+    if N_max < N_min:
+        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N_min, T=T, n=n, atol=atol, rtol=rtol,
+                                                           method=method, speed=speed)
+    atol = atol/3
+    rtol = rtol/3
+    part = np.linspace(0, T, 4)
+    for N in range(N_min, N_max+1):
+        # just running the solver once for each possible N because there might be initial computational costs
+        # associated with running some degree N for the first time
+        print(f'N={N}')
+        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, atol=1000*atol, rtol=1000*rtol,
+                                         method=method, speed=speed)
+    part = np.linspace(0, T, n+1)  # starting partition
+    N = np.ones(n, dtype=int) * N_min  # for each interval, gives the current degree
+
+    def solve_(N_, part_):
+        return solve_fixed_error_representation(x=x, f=f, y_0=y_0, N=N_, partition=part_,
+                                                atol=atol/(len(part)-1), rtol=rtol/(len(part)-1),
+                                                method=method, speed=speed)
+
+    tic = time.perf_counter()
+    y, prop_loc_err, loc_err, times = solve_(N_=N, part_=part)
+    global_err = np.sum(prop_loc_err, axis=0)
+    abs_err = ta.l1(global_err)
+    rel_err = abs_err/x.norm(y[-1, :]) if x.norm(y[-1, :]) > atol else rtol/2
+    if abs_err < atol and rel_err < rtol:
+        print('Total time:', time.perf_counter() - tic)
+        return part, y, prop_loc_err, N
+
+    while abs_err > atol or rel_err > rtol:
+        print(abs_err, rel_err)
+        print(N)
+        for i in range(N_max-N_min+1):
+            print(f'{N_min+i}: {np.sum(N == N_min+i)}')
+
+        n = len(part)-1
+        abs_prop_loc_err = ta.l1(prop_loc_err, axis=1)
+        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol/n, (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol else rtol / (2*n)) >= rtol/n)).flatten()
+        interesting_ind = relevant_ind[N[relevant_ind] != N_max]
+        N_1, part_1, _, interesting_ind_1 = update_grid(N=N, part=part, incr_deg_ind=np.argwhere(np.array([False])),
+                                                        div_int_ind=interesting_ind)
+
+        y_1, prop_loc_err_1, loc_err_1, times_1 = solve_(N_=N_1, part_=part_1)
+
+        global_err_1 = np.sum(prop_loc_err_1, axis=0)
+        abs_err_1 = ta.l1(global_err_1)
+        rel_err_1 = abs_err_1 / x.norm(y_1[-1, :]) if x.norm(y_1[-1, :]) > atol else rtol / 2
+
+        if abs_err_1 < atol and rel_err_1 < rtol:
+            print('Finished prematurely when subdividing intervals')
+            print(f'absolute error {abs_err_1}, where we have a tolerance of {atol}')
+            print(f'relative error {rel_err_1}, where we have a tolerance of {rtol}')
+            print('Total time:', time.perf_counter() - tic)
+            return part_1, y_1, prop_loc_err_1, N_1
+
+        N_2 = np.copy(N)
+        N_2[interesting_ind] = N[interesting_ind] + 1
+        y_2, prop_loc_err_2, loc_err_2, times_2 = solve_(N_=N_2, part_=part)
+
+        global_err_2 = np.sum(prop_loc_err_2, axis=0)
+        abs_err_2 = ta.l1(global_err_2)
+        rel_err_2 = abs_err_2 / x.norm(y_2[-1, :]) if x.norm(y_2[-1, :]) > atol else rtol / 2
+
+        if abs_err_2 < atol and rel_err_2 < rtol:
+            print('Finished prematurely when increasing the degree')
+            print(f'absolute error {abs_err_2}, where we have a tolerance of {atol}')
+            print(f'relative error {rel_err_2}, where we have a tolerance of {rtol}')
+            print('Total time:', time.perf_counter() - tic)
+            return part, y_2, prop_loc_err_2, N_2
+
+        int_err_est = (loc_err_1[interesting_ind_1] + loc_err_1[interesting_ind_1+1]) / loc_err[interesting_ind]
+        deg_time_est = times_2[interesting_ind] / times[interesting_ind]
+        deg_err_est = loc_err_2[interesting_ind] / loc_err[interesting_ind]
+
+        incr_deg = 2 ** (np.log(deg_err_est) / np.log(int_err_est)) > deg_time_est
+        incr_deg_ind = interesting_ind[incr_deg]
+        div_int_ind = interesting_ind[np.invert(incr_deg)]
+        div_int_ind = np.concatenate((div_int_ind, relevant_ind[N[relevant_ind] == N_max]))
+        new_N, new_part, _, _ = update_grid(N=N, part=part, incr_deg_ind=incr_deg_ind, div_int_ind=div_int_ind)
+
+        new_y, new_prop_loc_err, new_loc_err, new_times = solve_(N_=new_N, part_=new_part)
+
+        part = new_part
+        N = new_N
+        y = new_y
+        loc_err = new_loc_err
+        prop_loc_err = new_prop_loc_err
+        times = new_times
+
+        global_err = np.sum(prop_loc_err, axis=0)
+        abs_err = ta.l1(global_err)
+        rel_err = abs_err / x.norm(y[-1, :]) if x.norm(y[-1, :]) > atol else rtol / 2
+        print(f'absolute error {abs_err}, where we have a tolerance of {atol}')
+        print(f'relative error {rel_err}, where we have a tolerance of {rtol}')
+
+    print('Total time:', time.perf_counter() - tic)
+    return part, y, prop_loc_err, N
 
 
 def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,

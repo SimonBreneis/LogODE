@@ -17,6 +17,23 @@ import euler
 import brownianroughtree as brt
 
 '''
+a = np.array([0, 1, 2, 4, 5, 9, 10, 3, 6, 7, 8])
+b = np.array([0, 1, 2, 4, 5, 9, 3, 6, 7, 8])
+
+permutation = np.argsort(a)
+a = a[permutation]
+print(permutation)
+last_ind = permutation[-1]
+reduced_permutation = permutation[:-1]
+overshoot_ind = np.where(reduced_permutation > last_ind)
+reduced_permutation[overshoot_ind] = reduced_permutation[overshoot_ind] - 1
+print(reduced_permutation)
+b = b[reduced_permutation]
+print(a)
+print(b)
+time.sleep(36000)
+'''
+'''
 if __name__ == '__main__':
     import cProfile, pstats
     cProfile.run("lo.solve_fully_adaptive_error_representation(x=ex.smooth_fractional_path(H=0.4, n=10000, save_level=3), f=ex.smooth_2x2_vector_field(N=3), y_0=np.array([0, 0]), N_min=2, N_max=3, atol=1e-03, rtol=1e-03)", "{}.profile".format(__file__))
@@ -26,9 +43,20 @@ if __name__ == '__main__':
     s.sort_stats("tottime").print_stats(100)
 time.sleep(360000)
 '''
-x = ex.smooth_fractional_path(H=0.4, n=10000, save_level=3)
-f = ex.smooth_2x2_vector_field(N=3)
-partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([0, 0]), N_min=2, N_max=3, atol=1e-04, rtol=1e-04)
+arr = np.arange(10)
+print(np.argwhere(arr < 0))
+# x = ex.smooth_fractional_path(H=0.4, n=100000, save_level=4)
+# f = ex.smooth_2x2_vector_field(N=4)
+print('do x')
+# x = ex.smooth_path_singularity(N=3)
+# x = ex.unit_circle(N=3)
+x = ex.smooth_fractional_path(H=0.4, n=1000000, save_level=4)
+print('did x')
+print('do f')
+f = ex.simple_smooth_2x2_vector_field(N=4)
+# f = ex.smooth_2x2_vector_field_singularity(N=3)
+print('did f')
+partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([0, 0]), N_min=1, N_max=4, atol=5e-03, rtol=5e-03)
 fine_partition = np.empty(8*len(partition)-7)
 fine_N = np.zeros(8*len(N), dtype=int)
 for i in range(len(partition)-1):
@@ -37,11 +65,17 @@ for i in range(len(partition)-1):
 good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=np.array([0, 0]), N=fine_N, partition=fine_partition, atol=1e-04/len(fine_partition), rtol=1e-04/len(fine_partition))
 print(y[-1, :])
 print(good_y[-1, :])
-print(np.sum(prop_loc_err, axis=0))
+global_error = np.sum(prop_loc_err, axis=0)
+print(global_error)
+print(ta.l1(y[-1, :] - good_y[-1, :]))
+print(ta.l1(global_error))
+corrected_y = y[-1, :] + np.sum(prop_loc_err, axis=0)
+print(corrected_y)
+print(ta.l1(good_y[-1, :] - corrected_y))
 plt.plot(y[:, 0], y[:, 1])
 plt.title('Solution path')
 plt.show()
-c = ['red', 'orange', 'red', 'green']
+c = ['red', 'orange', 'yellow', 'green']
 prev_N = np.array([True, True, True, True])
 for i in range(len(partition)-1):
     if prev_N[N[i]-1]:
@@ -54,6 +88,57 @@ plt.title('Length and degree of partition intervals')
 plt.xlabel('Time')
 plt.ylabel('Length of interval')
 plt.yscale('log')
+plt.legend(loc='best')
+plt.show()
+
+plt.plot(partition, y[:, 0], label='first component')
+plt.plot(partition, y[:, 1], label='second components')
+plt.title('Solution against time')
+plt.xlabel('Time')
+plt.legend(loc='best')
+plt.show()
+print('Finished!!')
+
+
+partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_slow(x=x, f=f, y_0=np.array([0, 0]), N_min=1, N_max=4, atol=5e-03, rtol=5e-03)
+fine_partition = np.empty(8*len(partition)-7)
+fine_N = np.zeros(8*len(N), dtype=int)
+for i in range(len(partition)-1):
+    fine_partition[8*i:(8*i+9)] = np.linspace(partition[i], partition[i+1], 9)
+    fine_N[8*i:8*(i+1)] = np.ones(8, dtype=int) * N[i]
+good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=np.array([0, 0]), N=fine_N, partition=fine_partition, atol=1e-04/len(fine_partition), rtol=1e-04/len(fine_partition))
+print(y[-1, :])
+print(good_y[-1, :])
+global_error = np.sum(prop_loc_err, axis=0)
+print(global_error)
+print(ta.l1(y[-1, :] - good_y[-1, :]))
+print(ta.l1(global_error))
+corrected_y = y[-1, :] + np.sum(prop_loc_err, axis=0)
+print(corrected_y)
+print(ta.l1(good_y[-1, :] - corrected_y))
+plt.plot(y[:, 0], y[:, 1])
+plt.title('Solution path')
+plt.show()
+c = ['red', 'orange', 'yellow', 'green']
+prev_N = np.array([True, True, True, True])
+for i in range(len(partition)-1):
+    if prev_N[N[i]-1]:
+        prev_N[N[i]-1] = False
+        plt.plot(np.array([partition[i], partition[i+1]]), np.array([partition[i+1]-partition[i], partition[i+1]-partition[i]]), color=c[N[i]-1], label=f'N={N[i]}')
+    else:
+        plt.plot(np.array([partition[i], partition[i + 1]]),
+                   np.array([partition[i + 1] - partition[i], partition[i + 1] - partition[i]]), color=c[N[i] - 1])
+plt.title('Length and degree of partition intervals')
+plt.xlabel('Time')
+plt.ylabel('Length of interval')
+plt.yscale('log')
+plt.legend(loc='best')
+plt.show()
+
+plt.plot(partition, y[:, 0], label='first component')
+plt.plot(partition, y[:, 1], label='second components')
+plt.title('Solution against time')
+plt.xlabel('Time')
 plt.legend(loc='best')
 plt.show()
 print('Finished!!')

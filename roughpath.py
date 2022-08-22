@@ -451,7 +451,7 @@ class RoughPathSymbolic(RoughPath):
         super().__init__(p, var_steps, norm, x_0)
         self.path = ta.SymbolicTensor([sp.Integer(1), path - path.subs(t, sp.Integer(0))])
         self.t = t
-        self.path_num = [lambda s: 1, sp.lambdify(self.t, self.path[1], 'numpy')]
+        self.path_num = [lambda s: 1, sp.lambdify(self.t, self.path[1], modules=['numpy', 'sympy'])]
         self.derivatives = sp.Array([sp.diff(path[i], t) for i in range(len(path))])
 
     def new_level(self):
@@ -462,7 +462,7 @@ class RoughPathSymbolic(RoughPath):
         """
         nl = sp.tensorproduct(self.path[-1], self.derivatives).applyfunc(lambda x: sp.integrate(x, self.t))
         self.path.append(nl - nl.subs(self.t, sp.Integer(0)))
-        self.path_num.append(sp.lambdify(self.t, self.path[-1], 'numpy'))
+        self.path_num.append(sp.lambdify(self.t, self.path[-1], modules=['numpy', 'sympy']))
 
     def eval_path(self, t, N):
         """
