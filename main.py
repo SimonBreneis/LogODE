@@ -16,6 +16,21 @@ from fbm import FBM
 import euler
 import brownianroughtree as brt
 
+
+def g(y):
+    return np.array([np.sum(y)])
+
+def g_grad(y):
+    return np.array([[1., 1.]])
+
+x = ex.unit_circle(N=2)
+f = ex.smooth_2x2_vector_field(N=2)
+y_on_partition, propagated_local_errors, local_errors, time_vec = lo.solve_fixed_error_representation(x=x, f=f, y_0=np.zeros(2), N=2, partition=np.linspace(0, 1, 101), speed=0.1, g=g, g_grad=g_grad)
+print(np.sum(propagated_local_errors, axis=0))
+print(y_on_partition[-1, :])
+plt.plot(y_on_partition[:, 0], y_on_partition[:, 1])
+plt.show()
+
 '''
 a = np.array([0, 1, 2, 4, 5, 9, 10, 3, 6, 7, 8])
 b = np.array([0, 1, 2, 4, 5, 9, 3, 6, 7, 8])

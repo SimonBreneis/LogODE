@@ -36,6 +36,31 @@ def insert_list(master, insertion, index):
         master.insert(index + i, insertion[i])
 
 
+def init_g(g, g_grad, eps=1e-06, second_level=False):
+
+    if g is None:
+        def g(y_):
+            return y_
+
+        def g_grad(y_):
+            return np.eye(len(y_))
+
+    if g_grad is None:
+        def g_grad(y_):
+            gy = g(y_)
+            result = np.empty((len(gy), len(y_)))
+            for j in range(len(y_)):
+                vec = np.zeros(len(y_))
+                vec[j] = eps
+                if second_level:
+                    result[:, j] = (g(y_ + vec) - g(y_ - vec)) / (2 * eps)
+                else:
+                    result[:, j] = (g(y_ + vec) - gy) / eps
+            return result
+
+    return g, g_grad
+
+
 def solve_step_sig(g, f, y_0, atol=1e-07, rtol=1e-04, method='RK45'):
     """
     Implementation of the Log-ODE method.
@@ -144,8 +169,8 @@ def solve_fixed(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', 
             N = N_vec[i-1]
         toc = time.perf_counter()
         if toc - last_time > 10:
-            print(
-                f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
+            print(f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated '
+                  f'{int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
             last_time = toc
         ticc = time.perf_counter()
         if compute_bound:
@@ -191,8 +216,8 @@ def solve_fixed_full(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK
     if isinstance(y_0, np.ndarray):
         y_0 = ta.sig_first_level_num(y_0, N_sol)
     f_full = f.extend(N_sol)
-    y, error, time_vec = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                           compute_bound=compute_bound)
+    y, error, time_vec = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol,
+                                     method=method, compute_bound=compute_bound)
     if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
         sig_steps = x.sig_steps
     else:
@@ -288,7 +313,7 @@ def solve_fixed_adj_full_alt(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, me
     if isinstance(y_0, ta.Tensor):
         y_0 = y_0[1]
     y, error, time_vec = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                               compute_bound=compute_bound)
+                                     compute_bound=compute_bound)
 
     x_dim = x.dim()
     z = np.empty((y.shape[0], x_dim + y.shape[1]))
@@ -331,7 +356,8 @@ def local_log_ode_error_constant(N, dim, p):
         int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
 
-def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1e-04, method='RK45', speed=-1):
+def solve_fixed_error_representation(x, f, y_0, N, partition, g=None, g_grad=None, atol=1e-07, rtol=1e-04,
+                                     method='RK45', speed=-1):
     """
     Implementation of the Log-ODE method. Uses the a-posteriori error representation.
     :param x: Rough path
@@ -339,6 +365,8 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
     :param y_0: Initial condition
     :param N: The degree of the Log-ODE method (f needs to be Lip(N+1))
     :param partition: Partition of the interval on which we apply the Log-ODE method
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
     :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
@@ -347,6 +375,7 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
     :return: Solution on partition points, propagated local errors, absolute values of non-propagated local errors,
         vector of computational times for solving each interval
     """
+    g, g_grad = init_g(g=g, g_grad=g_grad, eps=1e-06, second_level=True)
     if not isinstance(N, np.ndarray):
         N = np.array([N]*(len(partition)-1), dtype=int)
     if isinstance(y_0, np.ndarray):
@@ -357,7 +386,8 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
     y_dim = y_0.dim()
     z_dim = x_dim + y_dim
     h_dim = y_dim * y_dim
-    linear_vf = vf.matrix_multiplication_vector_field(y_dim, norm=f.norm)
+    result_dim = len(g(y_0[1]))
+    linear_vf = vf.matrix_multiplication_vector_field(y_dim, result_dim, norm=f.norm)
     print('gonna solve for z')
     tic = time.perf_counter()
     z, _, time_vec = solve_fixed_adj_full(x, f, y_0, N, partition, atol=atol, rtol=rtol, method=method,
@@ -367,9 +397,9 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
     y = z.project_space([i + x_dim for i in range(y_dim)])
     h_sig = [0]*(n-2)
     Psi = [0]*(n-1)
-    Psi[-1] = np.eye(y_dim).flatten()
+    Psi[-1] = g_grad(y.at(partition[-1], 1)[1]).flatten()
     local_errors = np.zeros(n-1)
-    propagated_local_errors = np.zeros((n-1, y_dim))
+    propagated_local_errors = np.zeros((n-1, result_dim))
     y_on_partition = np.zeros((n, y_dim))
     y_on_partition[0, :] = y_0[1]
 
@@ -382,8 +412,8 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
         if n > 3:
             tic = time.perf_counter()
             v_init = z.at(partition[1], N_max).add_dimensions(front=0, back=h_dim)
-            v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[1], partition[2], N_max), f.flow(), y_0=v_init,
-                                                           atol=atol, rtol=rtol, method=method, N_sol=N_max,
+            v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[1], partition[2], N_max), f.flow(),
+                                                           y_0=v_init, atol=atol, rtol=rtol, method=method, N_sol=N_max,
                                                            n_intervals=n_intervals)
             v_sig.project_space([i + z_dim for i in range(h_dim)])
             toc = time.perf_counter()
@@ -406,8 +436,8 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
                 f'{100 * i / (n - 2):.2f}% complete, estimated {int((toc - tic) / i * (n - i-2))}s remaining.')
             last_time = toc
         v_init = z.at(partition[i+1], N[i+1]).add_dimensions(front=0, back=h_dim)
-        v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[i+1], partition[i+2], N[i+1]), f.flow(), y_0=v_init,
-                                                       atol=atol, rtol=rtol, method=method, N_sol=N[i+1],
+        v_sig = v_init.inverse() * solve_step_sig_full(z.sig(partition[i+1], partition[i+2], N[i+1]), f.flow(),
+                                                       y_0=v_init, atol=atol, rtol=rtol, method=method, N_sol=N[i+1],
                                                        n_intervals=n_intervals)
         h_sig[i] = v_sig.project_space([j + z_dim for j in range(h_dim)])
 
@@ -426,18 +456,17 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, atol=1e-07, rtol=1
                 f'{100 * i / (n - 1):.2f}% complete, estimated {int((toc - tic) / i * (n - i-1))}s remaining.')
             last_time = toc
         subpartition = np.linspace(partition[i], partition[i+1], n_intervals+1)
-        y_local, _, _ = solve_fixed(x, f, y_0=y_on_partition[i, :], N=N[i], partition=subpartition, atol=atol/n_intervals,
-                                 rtol=rtol/n_intervals, method=method, compute_bound=False)
+        y_local, _, _ = solve_fixed(x, f, y_0=y_on_partition[i, :], N=N[i], partition=subpartition,
+                                    atol=atol/n_intervals, rtol=rtol/n_intervals, method=method, compute_bound=False)
         local_error = y_local[-1, :] - y_on_partition[i+1, :]
         local_errors[i] = ta.l1(local_error)
-        propagated_local_errors[i, :] = Psi[i].reshape((y_dim, y_dim)) @ local_error
-
+        propagated_local_errors[i, :] = Psi[i].reshape((result_dim, y_dim)) @ local_error
     # global_error = np.sum(propagated_local_errors, axis=0)
     return y_on_partition, propagated_local_errors, local_errors, time_vec
 
 
-def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, atol=1e-04, rtol=1e-02, method='RK45',
-                                                speed=-1):
+def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, g=None, g_grad=None, atol=1e-04, rtol=1e-02,
+                                                method='RK45', speed=-1):
     """
     Implementation of the Log-ODE method. Uses the a-posteriori error representation.
     :param x: Rough path
@@ -446,6 +475,8 @@ def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, atol=1
     :param N: The degree of the Log-ODE method (f needs to be Lip(N+1))
     :param T: Final time
     :param n: Initial number of time intervals
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
     :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
@@ -456,8 +487,8 @@ def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, atol=1
     atol = atol/2
     rtol = rtol/2
     partition = np.linspace(0, T, n+1)
-    y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=atol/n, rtol=rtol/n,
-                                                        method=method, speed=speed)
+    y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, g=g, g_grad=g_grad,
+                                                        atol=atol/n, rtol=rtol/n, method=method, speed=speed)
     global_err = np.sum(loc_err, axis=0)
     abs_err = ta.l1(global_err)
     rel_err = abs_err/x.norm(y[-1, :])
@@ -476,7 +507,7 @@ def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, atol=1
         joint_partition[:len(partition)] = partition
         joint_partition[len(partition):] = additional_times
         partition = np.sort(joint_partition)
-        y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N, partition=partition,
+        y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, g=g, g_grad=g_grad,
                                                             atol=atol / len(partition), rtol=rtol / len(partition),
                                                             method=method, speed=speed)
         global_err = np.sum(loc_err, axis=0)
@@ -486,8 +517,8 @@ def solve_adaptive_error_representation_fixed_N(x, f, y_0, N, T=1., n=16, atol=1
     return partition, y, loc_err
 
 
-def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32, atol=1e-04, rtol=1e-02, method='RK45',
-                                        speed=-1):
+def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32, g=None, g_grad=None, atol=1e-04,
+                                        rtol=1e-02, method='RK45', speed=-1):
     """
     Implementation of the Log-ODE method. Uses the a-posteriori error representation.
     :param x: Rough path
@@ -497,6 +528,8 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32,
     :param N_max: Maximal degree of the Log-ODE method
     :param T: Final time
     :param n: Initial number of time intervals
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
     :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
@@ -514,8 +547,8 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32,
     partition = np.linspace(0, T, 3)
     for N in range(N_min, N_max+1):
         print(f'N={N}')
-        solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=1000*atol, rtol=1000*rtol,
-                                         method=method, speed=speed)
+        solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, g=g, g_grad=g_grad, atol=1000*atol,
+                                         rtol=1000*rtol, method=method, speed=speed)
 
     partition = np.linspace(0, T, n+1)
     N_vec = np.array([i for i in range(N_min, N_max + 1)])
@@ -523,8 +556,9 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32,
     for i in range(len(N_vec)):
         print(f'N={N_vec[i]}')
         tic = time.perf_counter()
-        y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N_vec[i], partition=partition, atol=atol/n,
-                                                            rtol=rtol/n, method=method, speed=speed)
+        y, loc_err, _, _ = solve_fixed_error_representation(x, f, y_0, N=N_vec[i], partition=partition, g=g,
+                                                            g_grad=g_grad, atol=atol/n, rtol=rtol/n, method=method,
+                                                            speed=speed)
         total_time = time.perf_counter() - tic
         global_err = np.sum(loc_err, axis=0)
         abs_err = ta.l1(global_err)
@@ -534,8 +568,8 @@ def solve_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=32,
         time_vec[i] = needed_n / n * total_time
     N = np.argmin(time_vec) + N_min
     print(f'found N={N}')
-    return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N, T=T, n=n, atol=3*atol, rtol=3*rtol,
-                                                       method=method, speed=speed)
+    return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N, T=T, n=n, g=g, g_grad=g_grad, atol=3*atol,
+                                                       rtol=3*rtol, method=method, speed=speed)
 
 
 def update_grid(N, part, incr_deg_ind, div_int_ind):
@@ -561,8 +595,8 @@ def update_grid(N, part, incr_deg_ind, div_int_ind):
     return new_N, new_partition, new_increase_degree_ind, new_divide_interval_ind
 
 
-def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-04, rtol=1e-02,
-                                              method='RK45', speed=-1):
+def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None, atol=1e-04,
+                                              rtol=1e-02, method='RK45', speed=-1):
     """
     Implementation of the Log-ODE method. Uses the a-posteriori error representation.
     :param x: Rough path
@@ -572,6 +606,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
     :param N_max: Maximal degree of the Log-ODE method
     :param T: Final time
     :param n: Initial number of time intervals
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
     :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
@@ -583,8 +619,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
     if N_min + 1 <= p:
         N_min = int(np.ceil(p-0.999))
     if N_max < N_min:
-        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N_min, T=T, n=n, atol=atol, rtol=rtol,
-                                                           method=method, speed=speed)
+        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N_min, T=T, n=n, g=g, g_grad=g_grad, atol=atol,
+                                                           rtol=rtol, method=method, speed=speed)
     atol = atol/3
     rtol = rtol/3
     part = np.linspace(0, T, 4)
@@ -592,8 +628,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
         # just running the solver once for each possible N because there might be initial computational costs
         # associated with running some degree N for the first time
         print(f'N={N}')
-        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, atol=1000*atol, rtol=1000*rtol,
-                                         method=method, speed=speed)
+        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, g=g, g_grad=g_grad, atol=1000*atol,
+                                         rtol=1000*rtol, method=method, speed=speed)
 
     tic = time.perf_counter()
     part = np.linspace(0, T, n+1)  # starting partition
@@ -620,8 +656,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
     # for the relative change of the local error when increasing the degree by one
 
     def solve_(N_, part_, y_0_=y_0):
-        return solve_fixed_error_representation(x=x, f=f, y_0=y_0_, N=N_, partition=part_,
-                                                atol=atol/(len(part_)-1), rtol=rtol/(len(part_)-1),
+        return solve_fixed_error_representation(x=x, f=f, y_0=y_0_, N=N_, partition=part_, g=g, g_grad=g_grad,
+                                                atol=atol / (len(part_) - 1), rtol=rtol / (len(part_) - 1),
                                                 method=method, speed=speed)
 
     def add_deg_est(N_ind, part_ind):
@@ -631,25 +667,26 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
         y_, _, loc_err_, times_ = solve_(y_0_=y_s, N_=N_min+N_ind+1, part_=np.array([s, t]))
         deg_time_est[N_ind, n_deg_time_est[N_ind]] = times_[0] / times[part_ind]
         n_deg_time_est[N_ind] += 1
-        deg_err_est[N_ind, n_deg_err_est[N_ind]] = loc_err_[0] / loc_err[part_ind] ** ((N_min + N_ind + 2) / (N_min + N_ind + 1))
+        deg_err_est[N_ind, n_deg_err_est[N_ind]] = \
+            loc_err_[0] / loc_err[part_ind] ** ((N_min + N_ind + 2) / (N_min + N_ind + 1))
         n_deg_err_est[N_ind] += 1
 
     def update_estrs():
-        for i in range(N_max-N_min):
-            if n_deg_err_est[i] > 0:
-                deg_err_estrs[i] = np.median(deg_err_est[i, :n_deg_err_est[i]])
-            if n_deg_time_est[i] > 0:
-                deg_time_estrs[i] = np.median(deg_time_est[i, :n_deg_time_est[i]])
-        for i in range(N_max-N_min):
-            n_est = n_int_err_est[i]
+        for k in range(N_max-N_min):
+            if n_deg_err_est[k] > 0:
+                deg_err_estrs[k] = np.median(deg_err_est[k, :n_deg_err_est[k]])
+            if n_deg_time_est[k] > 0:
+                deg_time_estrs[k] = np.median(deg_time_est[k, :n_deg_time_est[k]])
+        for k in range(N_max-N_min):
+            n_est = n_int_err_est[k]
             if n_est >= 2:
-                possible_estimator = np.median(int_err_est[i, :n_est])
+                possible_estimator = np.median(int_err_est[k, :n_est])
                 log_estimator = np.log(possible_estimator)
-                std_log_estimator = np.std(int_err_est[i, :n_est])
+                std_log_estimator = np.std(int_err_est[k, :n_est])
                 lhs = log_estimator + 1.65 * std_log_estimator / np.sqrt(n_est)
-                rhs = -((N_min+i+1)/p - 1) * np.log(2) / np.log(n_est)
+                rhs = -((N_min+k+1)/p - 1) * np.log(2) / np.log(n_est)
                 if lhs < rhs:
-                    int_err_estrs[i] = possible_estimator
+                    int_err_estrs[k] = possible_estimator
 
     def enlarge_array(a):
         temp = np.zeros((a.shape[0], 2 * a.shape[1]))
@@ -698,7 +735,9 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
 
         n = len(part)-1
         abs_prop_loc_err = ta.l1(prop_loc_err, axis=1)
-        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol/n, (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol else rtol / (2*n)) >= rtol/n)).flatten()
+        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol/n,
+                                                 (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol
+                                                  else rtol / (2*n)) >= rtol/n)).flatten()
         interesting_ind = relevant_ind[N[relevant_ind] != N_max]
         e_N = deg_err_estrs[N[interesting_ind]-N_min] * loc_err[interesting_ind]**(1/N[interesting_ind])
         e_I = int_err_estrs[N[interesting_ind]-N_min]
@@ -728,7 +767,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
             deg_time_est[i, n_deg_err_est[i]:n_deg_time_est[i] + len(loc_new_deg_time_est)] = loc_new_deg_time_est
             n_deg_time_est[i] = n_deg_time_est[i] + len(loc_new_deg_time_est)
 
-        new_deg_err_est = new_loc_err[new_incr_deg_ind] / loc_err[incr_deg_ind] ** ((N[incr_deg_ind]+2)/(N[incr_deg_ind]+1))
+        new_deg_err_est = new_loc_err[new_incr_deg_ind] / \
+            loc_err[incr_deg_ind] ** ((N[incr_deg_ind] + 2) / (N[incr_deg_ind] + 1))
         for i in range(N_max-N_min):
             loc_new_deg_err_est = new_deg_err_est[N[incr_deg_ind] == N_min+i]
             if n_deg_err_est[i] + len(loc_new_deg_err_est) > len(deg_err_est[i, :]):
@@ -754,8 +794,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
     return part, y, prop_loc_err, N
 
 
-def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-04, rtol=1e-02,
-                                                   method='RK45', speed=-1):
+def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None,
+                                                   atol=1e-04, rtol=1e-02, method='RK45', speed=-1):
     """
     Implementation of the Log-ODE method. Uses the a-posteriori error representation.
     :param x: Rough path
@@ -765,6 +805,8 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
     :param N_max: Maximal degree of the Log-ODE method
     :param T: Final time
     :param n: Initial number of time intervals
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Total (over the entire time interval) absolute error tolerance of the ODE solver
     :param rtol: Total (over the entire time interval) relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
@@ -776,8 +818,8 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
     if N_min + 1 <= p:
         N_min = int(np.ceil(p-0.999))
     if N_max < N_min:
-        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N_min, T=T, n=n, atol=atol, rtol=rtol,
-                                                           method=method, speed=speed)
+        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N_min, T=T, n=n, g=g, g_grad=g_grad, atol=atol,
+                                                           rtol=rtol, method=method, speed=speed)
     atol = atol/3
     rtol = rtol/3
     part = np.linspace(0, T, 4)
@@ -785,14 +827,14 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
         # just running the solver once for each possible N because there might be initial computational costs
         # associated with running some degree N for the first time
         print(f'N={N}')
-        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, atol=1000*atol, rtol=1000*rtol,
-                                         method=method, speed=speed)
+        solve_fixed_error_representation(x, f, y_0, N=N, partition=part, g=g, g_grad=g_grad, atol=1000*atol,
+                                         rtol=1000*rtol, method=method, speed=speed)
     part = np.linspace(0, T, n+1)  # starting partition
     N = np.ones(n, dtype=int) * N_min  # for each interval, gives the current degree
 
     def solve_(N_, part_):
-        return solve_fixed_error_representation(x=x, f=f, y_0=y_0, N=N_, partition=part_,
-                                                atol=atol/(len(part)-1), rtol=rtol/(len(part)-1),
+        return solve_fixed_error_representation(x=x, f=f, y_0=y_0, N=N_, partition=part_, g=g, g_grad=g_grad,
+                                                atol=atol / (len(part) - 1), rtol=rtol / (len(part) - 1),
                                                 method=method, speed=speed)
 
     tic = time.perf_counter()
@@ -812,7 +854,9 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
 
         n = len(part)-1
         abs_prop_loc_err = ta.l1(prop_loc_err, axis=1)
-        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol/n, (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol else rtol / (2*n)) >= rtol/n)).flatten()
+        relevant_ind = np.argwhere(np.logical_or(abs_prop_loc_err >= atol / n,
+                                                 (abs_prop_loc_err / ta.l1(y[-1, :]) if ta.l1(y[-1, :]) > atol
+                                                  else rtol / (2 * n)) >= rtol / n)).flatten()
         interesting_ind = relevant_ind[N[relevant_ind] != N_max]
         N_1, part_1, _, interesting_ind_1 = update_grid(N=N, part=part, incr_deg_ind=np.argwhere(np.array([False])),
                                                         div_int_ind=interesting_ind)
@@ -874,8 +918,8 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
     return part, y, prop_loc_err, N
 
 
-def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
-          N_sol=1, N_min=1, N_max=5, n=32, speed=-1):
+def solve(x, f, y_0, solver, N=1, T=1., partition=None, g=None, g_grad=None, atol=1e-07, rtol=1e-04, method='RK45',
+          compute_bound=False, N_sol=1, N_min=1, N_max=5, n=32, speed=-1):
     """
     Various Log-ODE implementations.
     :param x: Rough path
@@ -886,6 +930,8 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, 
     :param N: Level of the Log-ODE method
     :param T: Final time
     :param partition: Time partition on which the Log-ODE method is applied
+    :param g: Payoff function. If None, uses the identity function
+    :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
     :param atol: Absolute error tolerance
     :param rtol: Relative error tolerance
     :param method: Method for solving the ODEs
@@ -914,11 +960,11 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, atol=1e-07, rtol=1e-04, 
         return solve_fixed_adj_full_alt(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                                         compute_bound=compute_bound, N_sol=N_sol)
     elif solver == 'fssr':
-        return solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                                method=method, speed=speed)
+        return solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, g=g, g_grad=g_grad, atol=atol,
+                                                rtol=rtol, method=method, speed=speed)
     elif solver == 'assN':
-        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N, T=T, atol=atol, rtol=rtol, method=method,
-                                                           speed=speed, n=n)
+        return solve_adaptive_error_representation_fixed_N(x, f, y_0, N=N, T=T, g=g, g_grad=g_grad, atol=atol,
+                                                           rtol=rtol, method=method, speed=speed, n=n)
     elif solver == 'assr':
-        return solve_adaptive_error_representation(x, f, y_0, N_min=N_min, N_max=N_max, T=T, n=n, atol=atol,
-                                                   rtol=rtol, method=method, speed=speed)
+        return solve_adaptive_error_representation(x, f, y_0, N_min=N_min, N_max=N_max, T=T, n=n, g=g, g_grad=g_grad,
+                                                   atol=atol, rtol=rtol, method=method, speed=speed)

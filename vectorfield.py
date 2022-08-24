@@ -363,17 +363,19 @@ class VectorFieldSymbolic(VectorField):
         return VectorFieldSymbolic(f=[f_2], norm=self.norm, variables=new_vars + self.variables)
 
 
-def matrix_multiplication_vector_field(d, norm=None):
+def matrix_multiplication_vector_field(d, e=0, norm=None):
     """
-    Returns the vector field f in L(R^(d^2), Lip(R^(d^2), R^(d^2))) given by f(y)x = yx, where yx is the matrix
+    Returns the vector field f in L(R^(d^2), Lip(R^(d^2), R^(e^2))) given by f(y)x = yx, where yx is the matrix
     multiplication of two dxd matrices.
     :param d: Dimension of the vector field
     :param norm: The norm that should be used
     :return: The vector field
     """
-    variables = list(sp.symbols('g0:%d' % (d*d)))
-    f = sp.MutableDenseNDimArray(np.zeros((d*d, d*d)))
-    for i in range(d):
+    if e == 0:
+        e = d
+    variables = list(sp.symbols('g0:%d' % (d*e)))
+    f = sp.MutableDenseNDimArray(np.zeros((d*e, d*d)))
+    for i in range(e):
         for j in range(d):
             submatrix = [[0]*d for _ in range(d)]
             for k in range(d):
