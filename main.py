@@ -17,37 +17,6 @@ import euler
 import brownianroughtree as brt
 
 
-def g(y):
-    return np.array([np.sum(y)])
-
-def g_grad(y):
-    return np.array([[1., 1.]])
-
-x = ex.unit_circle(N=2)
-f = ex.smooth_2x2_vector_field(N=2)
-y_on_partition, propagated_local_errors, local_errors, time_vec = lo.solve_fixed_error_representation(x=x, f=f, y_0=np.zeros(2), N=2, partition=np.linspace(0, 1, 101), speed=0.1, g=g, g_grad=g_grad)
-print(np.sum(propagated_local_errors, axis=0))
-print(y_on_partition[-1, :])
-plt.plot(y_on_partition[:, 0], y_on_partition[:, 1])
-plt.show()
-
-'''
-a = np.array([0, 1, 2, 4, 5, 9, 10, 3, 6, 7, 8])
-b = np.array([0, 1, 2, 4, 5, 9, 3, 6, 7, 8])
-
-permutation = np.argsort(a)
-a = a[permutation]
-print(permutation)
-last_ind = permutation[-1]
-reduced_permutation = permutation[:-1]
-overshoot_ind = np.where(reduced_permutation > last_ind)
-reduced_permutation[overshoot_ind] = reduced_permutation[overshoot_ind] - 1
-print(reduced_permutation)
-b = b[reduced_permutation]
-print(a)
-print(b)
-time.sleep(36000)
-'''
 '''
 if __name__ == '__main__':
     import cProfile, pstats
@@ -58,20 +27,25 @@ if __name__ == '__main__':
     s.sort_stats("tottime").print_stats(100)
 time.sleep(360000)
 '''
-arr = np.arange(10)
-print(np.argwhere(arr < 0))
+
+
+
 # x = ex.smooth_fractional_path(H=0.4, n=100000, save_level=4)
 # f = ex.smooth_2x2_vector_field(N=4)
 print('do x')
 # x = ex.smooth_path_singularity(N=3)
 # x = ex.unit_circle(N=3)
-x = ex.smooth_fractional_path(H=0.4, n=1000000, save_level=4)
+# x = ex.smooth_fractional_path(H=0.4, n=1000000, save_level=3)
+x = ex.brownian_path(n=1000, dim=2, T=1., final_value=((np.log(1.02) - 0.005*0.1) / 0.2, 0.1))
 print('did x')
 print('do f')
-f = ex.simple_smooth_2x2_vector_field(N=4)
+# f = ex.simple_smooth_2x2_vector_field(N=3)
 # f = ex.smooth_2x2_vector_field_singularity(N=3)
+# f = ex.bergomi_vector_field(N=3)
+f = ex.wrong_black_scholes_vector_field(N=3)
 print('did f')
-partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([0, 0]), N_min=1, N_max=4, atol=5e-03, rtol=5e-03)
+g, g_grad = ex.smoothed_digital_call_option_payoff(eps=0.1)
+partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([1., 0.]), N_min=2, N_max=3, atol=1e-04, rtol=1e-04, g=g, g_grad=g_grad, n=64)
 fine_partition = np.empty(8*len(partition)-7)
 fine_N = np.zeros(8*len(N), dtype=int)
 for i in range(len(partition)-1):
@@ -115,7 +89,7 @@ plt.show()
 print('Finished!!')
 
 
-partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_slow(x=x, f=f, y_0=np.array([0, 0]), N_min=1, N_max=4, atol=5e-03, rtol=5e-03)
+partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_slow(x=x, f=f, y_0=np.array([0, 0]), N_min=2, N_max=3, atol=1e-04, rtol=1e-04, g=g, g_grad=g_grad, n=64)
 fine_partition = np.empty(8*len(partition)-7)
 fine_N = np.zeros(8*len(N), dtype=int)
 for i in range(len(partition)-1):

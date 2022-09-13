@@ -498,7 +498,7 @@ class OneFormSymbolic(OneForm):
         """
         super().__init__(f, norm)
         self.variables = variables
-        self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
+        self.f_num = [sp.lambdify(self.variables, self.f[i], modules=['numpy', 'sympy']) for i in range(len(f))]
         self.higher_order_fs = {}
         self.dim_x = self.f[0].shape[1]
         self.dim_y = self.f[0].shape[0]
@@ -510,7 +510,7 @@ class OneFormSymbolic(OneForm):
         """
         der_highest_der = sp.Array([sp.diff(self.f[-1], self.variables[i]) for i in range(len(self.variables))])
         self.f.append(der_highest_der)
-        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules='numpy'))
+        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules=['numpy', 'sympy']))
         return None
 
     def derivative(self, y, dx):
@@ -533,7 +533,7 @@ class OneFormSymbolic(OneForm):
                 permutation[j] = j+1
             permutation[curr_tensor_level] = 2
             result = sp.permutedims(sp.tensorproduct(result, self.f[subpartition[1]-1]), permutation)
-        result = sp.lambdify(self.variables, result, modules='numpy')
+        result = sp.lambdify(self.variables, result, modules=['numpy', 'sympy'])
         self.higher_order_fs[key] = result
         return np.tensordot(result(*list(y)), trans_dx, axes=len(trans_dx.shape))
 

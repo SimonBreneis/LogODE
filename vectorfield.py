@@ -248,7 +248,7 @@ class VectorFieldSymbolic(VectorField):
         """
         super().__init__(f, norm)
         self.variables = variables
-        self.f_num = [sp.lambdify(self.variables, self.f[i], modules='numpy') for i in range(len(f))]
+        self.f_num = [sp.lambdify(self.variables, self.f[i], modules=['numpy', 'sympy']) for i in range(len(f))]
         self.dim_x = self.f[0].shape[1]
         self.dim_y = self.f[0].shape[0]
 
@@ -265,7 +265,7 @@ class VectorFieldSymbolic(VectorField):
         permutations[1] = 0
         self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)),
                                      permutations))
-        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules='numpy'))
+        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules=['numpy', 'sympy']))
         return None
 
     def derivative(self, y, dx):

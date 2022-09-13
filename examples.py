@@ -71,6 +71,33 @@ def rough_fractional_Brownian_path_time(H, n, dim, T=1., p=0., var_steps=15, nor
                                   sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
 
 
+def brownian_path(n, dim, T=1., final_value=None, var_steps=15, norm=ta.l1, save_level=3):
+    """
+    Returns a sample path of fractional Brownian motion as an instance of a RoughPath.
+    :param H: Hurst parameter
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param p: Parameter in which the roughness should be measured (default choice 1/H + 0.05)
+    :param var_steps: Number of steps used in approximating p-variation
+    :param norm: Norm for computing p-variation
+    :param save_level: Level up to which the signatures on the time grid are stored
+    :return: An instance of a RoughPath
+    """
+    p = 2.05
+    times = np.linspace(0, T, n + 1)
+    values = np.concatenate((np.zeros((1, dim)), np.cumsum(np.random.normal(0, np.sqrt(T / n), (n, dim)), axis=0)), axis=0)
+    if final_value is not None:
+        for i in range(dim):
+            if final_value[i] is not None:
+                values[:, i] = values[:, i] + (final_value[i] - values[:, -1]) * np.linspace(0, 1, n + 1)
+    if save_level <= 5:
+        return rp.RoughPathDiscrete(times=times, values=values, p=p, var_steps=var_steps, norm=norm,
+                                    save_level=save_level)
+    return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=0),
+                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
+
+
 def asymmetric_Brownian_path(n, T=1., q=0.5):
     """
     Returns a sample path of an asymmetric Brownian motion.
@@ -381,6 +408,70 @@ def langevin_banana_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
                                    2*(y[0]**2-y[1]) * x[0] + x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
     return vec_field
+
+
+def bergomi_vector_field(eta=2., rho=-0.9, symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    """
+    aovnire
+    :param eta:
+    :param rho:
+    :return:
+    """
+    if symbolic:
+        s, v = sp.symbols('s v')
+        rho, eta = sp.Float(rho), sp.Float(eta)
+        rho_bar = sp.sqrt(1 - rho ** 2)
+        f = sp.Array([[s * sp.sqrt((v + sp.Abs(v)) / 2) * rho, s * sp.sqrt((v + sp.Abs(v)) / 2) * rho_bar], [0, eta * v]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[s, v])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        rho_bar = np.sqrt(1 - rho ** 2)
+        f = lambda s, v: np.array([[s * np.sqrt(np.fmax(0, v)) * rho, s * np.sqrt(np.fmax(0, v)) * rho_bar],
+                                   [0, eta * v]])
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
+    return vec_field
+
+
+def wrong_black_scholes_vector_field(sigma=0.2, eta=0.1, symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    """
+    aovnire
+    :param eta:
+    :param rho:
+    :return:
+    """
+    if symbolic:
+        s, v = sp.symbols('s v')
+        sigma, eta = sp.Float(sigma), sp.Float(eta)
+        f = sp.Array([[sigma * s, eta * v * s], [0, 1]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[s, v])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        f = lambda s, v: np.array([[sigma * s, eta * v * s], [0, 1]])
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
+    return vec_field
+
+
+def smoothed_digital_call_option_payoff(K=1., eps=0.01):
+    """
+    Returns the payoff function for the digital call option, which is smoothed, together with its derivative.
+    :param K: Strike price
+    :param eps: Smoothing parameter, smaller is rougher but more accurate
+    :return: The payoff function and its derivative function
+    """
+
+    def payoff(y):
+        return np.array([(np.tanh((y[0] - K) / eps) + 1) / 2])
+
+    def derivative(y):
+        result = np.zeros(len(y))
+        result[0] = (1 - np.tanh((y[0] - K) / eps) ** 2) / 2 / eps
+        return result
+
+    return payoff, derivative
 
 
 def log_linear_regression(x, y):
