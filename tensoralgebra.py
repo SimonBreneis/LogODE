@@ -7,6 +7,7 @@ def l1(x, axis=None):
     """
     Implementation of the l^1-norm.
     :param x: A numpy-array or a Tensor
+    :param axis: Axis over which the l^1-norm should be taken
     :return: The l^1-norm
     """
     if isinstance(x, Tensor):

@@ -1,7 +1,6 @@
 import numpy as np
 import sympy as sp
 import tensoralgebra as ta
-import vectorfield as vf
 
 
 number_subpartitions_dict = {}
@@ -364,7 +363,7 @@ class OneForm:
         :param dx: K-th level of the signature of the path (i.e. a K-tensor), where K = |subpartition|
         :return: Approximation of the corresponding summand of the increment of the n-th level of the integral
         """
-        pass
+        return 0
 
     def higher_order_one_form(self, n, y, g):
         """

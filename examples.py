@@ -74,11 +74,13 @@ def rough_fractional_Brownian_path_time(H, n, dim, T=1., p=0., var_steps=15, nor
 def brownian_path(n, dim, T=1., final_value=None, var_steps=15, norm=ta.l1, save_level=3):
     """
     Returns a sample path of fractional Brownian motion as an instance of a RoughPath.
-    :param H: Hurst parameter
     :param n: Number of equidistant evaluation points
     :param dim: Dimension of the path
     :param T: Final time
-    :param p: Parameter in which the roughness should be measured (default choice 1/H + 0.05)
+    :param final_value: List or numpy array of length dim denoting the final value of the Brownian path (like a
+        Brownian bridge). If a component is None, does not impose a final value in this dimension. If final_value itself
+        is None, does not impose a final value at all (and hence gives an actual Brownian path, not some Brownian
+        bridge)
     :param var_steps: Number of steps used in approximating p-variation
     :param norm: Norm for computing p-variation
     :param save_level: Level up to which the signatures on the time grid are stored
@@ -86,7 +88,8 @@ def brownian_path(n, dim, T=1., final_value=None, var_steps=15, norm=ta.l1, save
     """
     p = 2.05
     times = np.linspace(0, T, n + 1)
-    values = np.concatenate((np.zeros((1, dim)), np.cumsum(np.random.normal(0, np.sqrt(T / n), (n, dim)), axis=0)), axis=0)
+    values = np.concatenate((np.zeros((1, dim)), np.cumsum(np.random.normal(0, np.sqrt(T / n), (n, dim)), axis=0)),
+                            axis=0)
     if final_value is not None:
         for i in range(dim):
             if final_value[i] is not None:
@@ -163,8 +166,8 @@ def time_rough_path(symbolic=True, norm=ta.l1, p=1., var_steps=15, N=1, sig_step
             for _ in range(1, N):
                 x.new_level()
     else:
-        path = lambda t: np.array([t])
-        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+        x = rp.RoughPathContinuous(path=lambda s: np.array([s]), sig_steps=sig_steps, p=p, var_steps=var_steps,
+                                   norm=norm)
     return x
 
 
@@ -178,7 +181,8 @@ def unit_circle(symbolic=True, param=4, norm=ta.l1, p=1., var_steps=15, N=1, sig
             for _ in range(1, N):
                 x.new_level()
     else:
-        path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sin(2 * np.pi * param * t)]) / np.sqrt(param)
+        def path(s):
+            return np.array([np.cos(2 * np.pi * param * s), np.sin(2 * np.pi * param * s)]) / np.sqrt(param)
         x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
     return x
@@ -194,7 +198,9 @@ def smooth_3d_path(symbolic=True, param=1296, norm=ta.l1, p=1, var_steps=15, N=1
             for _ in range(1, N):
                 x.new_level()
     else:
-        path = lambda t: np.array([np.cos(2*param*np.pi*t), np.sin(2*param*np.pi*t), np.sin(2*param*np.pi*t+np.pi/4)]) / np.sqrt(param) + np.array([1, 2, -1])*t
+        def path(s):
+            return np.array([np.cos(2 * param * np.pi * s), np.sin(2 * param * np.pi * s),
+                             np.sin(2 * param * np.pi * s + np.pi / 4)]) / np.sqrt(param) + np.array([1, 2, -1]) * s
         x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
     return x
 
@@ -208,14 +214,14 @@ def wiggly_sinh(symbolic=True, param=4, norm=ta.l1, p=1., var_steps=15, N=1, sig
         for _ in range(2, N+1):
             x.new_level()
     else:
-        path = lambda t: np.array([np.cos(2 * np.pi * param * t), np.sinh(t-1/2)])
-        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+        x = rp.RoughPathContinuous(path=lambda s: np.array([np.cos(2 * np.pi * param * s), np.sinh(s - 0.5)]),
+                                   sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
     return x
 
 
 def pure_area(norm=ta.l1, p=2., var_steps=15, sig_steps=2000):
-    path = lambda s, t: ta.NumericTensor(
-        [1., np.array([0., 0.]), np.array([[0., np.pi * (t - s)], [np.pi * (s - t), 0.]])])
+    def path(s, t):
+        return ta.NumericTensor([1., np.array([0., 0.]), np.array([[0., np.pi * (t - s)], [np.pi * (s - t), 0.]])])
     return rp.RoughPathExact(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
 
 
@@ -225,7 +231,8 @@ def third_level_path(param=4, norm=ta.l1, p=1., var_steps=15, sig_steps=2000):
         if isinstance(t, np.ndarray):
             a = (t < 1) * np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), np.zeros(len(t))])
             b = ((1 <= t) & (t < 2)) * np.array([np.ones(len(t)), np.zeros(len(t)), t - 1])
-            c = ((2 <= t) & (t < 3)) * np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)), np.ones(len(t))])
+            c = ((2 <= t) & (t < 3)) * np.array([np.cos(2 * np.pi * (t - 2)), -np.sin(2 * np.pi * (t - 2)),
+                                                 np.ones(len(t))])
             d = (3 <= t) * np.array([np.ones(len(t)), np.zeros(len(t)), 1 - (t - 3)])
         else:
             a = (t < 1) * np.array([np.cos(2 * np.pi * t), np.sin(2 * np.pi * t), 0])
@@ -275,11 +282,10 @@ def smooth_path_singularity(symbolic=True, norm=ta.l1, p=1., var_steps=15, N=1, 
         x = rp.RoughPathSymbolic(path=path, t=t, p=p, var_steps=var_steps, norm=norm)
         if N > 1:
             for _ in range(1, N):
-                print('here')
                 x.new_level()
     else:
-        path = lambda t: np.array([1 / (5000*(t-0.5)**2 + 1), t])
-        x = rp.RoughPathContinuous(path=path, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm)
+        x = rp.RoughPathContinuous(path=lambda s: np.array([1 / (5000 * (s - 0.5) ** 2 + 1), s]), sig_steps=sig_steps,
+                                   p=p, var_steps=var_steps, norm=norm)
 
     return x
 
@@ -293,8 +299,7 @@ def linear_1x1_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([y[0]*x[0]])
-        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=1, dim_y=1, h=h, norm=norm)
+        vec_field = vf.VectorFieldNumeric(f=[lambda z, x: np.array([z[0]*x[0]])], dim_x=1, dim_y=1, h=h, norm=norm)
 
     return vec_field
 
@@ -308,8 +313,9 @@ def linear_2x3_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(y[0]-y[1])*x[0] + y[0]*x[1] + (y[1]-y[0])*x[2],
-                                   2*y[1]*x[0] + (y[0] + y[1])*x[1] + (2*y[0] - y[1])*x[2]])
+        def f(y_, x):
+            return np.array([(y_[0] - y_[1]) * x[0] + y_[0] * x[1] + (y_[1] - y_[0]) * x[2],
+                             2 * y_[1] * x[0] + (y_[0] + y_[1]) * x[1] + (2 * y_[0] - y_[1]) * x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
     return vec_field
 
@@ -323,8 +329,9 @@ def smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
-                                   1 / (1 + np.exp(-y[1])) * x[0] + 1 / (1 + np.exp(-(y[0] - 2 * y[1]))) * x[1]])
+        def f(y_, x):
+            return np.array([(y_[1] - y_[0]) * x[0] - y_[1] * x[1],
+                             1 / (1 + np.exp(-y_[1])) * x[0] + 1 / (1 + np.exp(-(y_[0] - 2 * y_[1]))) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
 
     return vec_field
@@ -339,8 +346,9 @@ def simple_smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
-                                   np.tanh(-y[1]) * x[0] + np.cos(-(y[0] - 2 * y[1])) * x[1]])
+        def f(y_, x):
+            return np.array([(y_[1] - y_[0]) * x[0] - y_[1] * x[1],
+                             np.tanh(-y_[1]) * x[0] + np.cos(-(y_[0] - 2 * y_[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
 
     return vec_field
@@ -355,8 +363,9 @@ def smooth_2x2_vector_field_singularity(symbolic=True, norm=ta.l1, N=1, h=1e-07)
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(y[1] - y[0]) * x[0] - y[1] * x[1],
-                                   np.tanh(-y[1]) * x[0] + np.cos(-(y[0] - 2 * y[1])) * x[1]])
+        def f(y_, x):
+            return np.array([(y_[1] - y_[0]) * x[0] - y_[1] * x[1],
+                             np.tanh(-y_[1]) * x[0] + np.cos(-(y_[0] - 2 * y_[1])) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
 
     return vec_field
@@ -371,8 +380,9 @@ def linear_nilpotent_3x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(y[0] + y[1]) * x[0] + y[0] * x[1], y[1] * x[0] + (y[1] + y[2]) * x[1],
-                                   y[2] * (x[0] + x[1])])
+        def f(y, x):
+            return np.array([(y[0] + y[1]) * x[0] + y[0] * x[1], y[1] * x[0] + (y[1] + y[2]) * x[1],
+                             y[2] * (x[0] + x[1])])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=3, h=h, norm=norm)
     return vec_field
 
@@ -387,10 +397,10 @@ def smooth_2x3_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array(
-            [(y[1] - y[0]) * x[0] - y[1] * x[1] + np.sin(y[0] * y[0]) * x[2],
-             1 / (1 - np.exp(y[1])) * x[0] + 1 / (1 - np.exp(y[0] - 2 * y[1])) * x[1] + np.tanh(y[1] * y[0]) * np.cos(
-                 y[0]) * x[2]])
+        def f(y_, x):
+            return np.array([(y_[1] - y_[0]) * x[0] - y_[1] * x[1] + np.sin(y_[0] * y_[0]) * x[2],
+                             1 / (1 - np.exp(y_[1])) * x[0] + 1 / (1 - np.exp(y_[0] - 2 * y_[1])) * x[1]
+                             + np.tanh(y_[1] * y_[0]) * np.cos(y_[0]) * x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
     return vec_field
 
@@ -404,43 +414,34 @@ def langevin_banana_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda y, x: np.array([(-4*y[0]*(y[0]**2-y[1])) * x[0] + x[1],
-                                   2*(y[0]**2-y[1]) * x[0] + x[2]])
+        def f(y_, x):
+            return np.array([(-4 * y_[0] * (y_[0] ** 2 - y_[1])) * x[0] + x[1], 2 * (y_[0] ** 2 - y_[1]) * x[0] + x[2]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
     return vec_field
 
 
 def bergomi_vector_field(eta=2., rho=-0.9, symbolic=True, norm=ta.l1, N=1, h=1e-07):
-    """
-    aovnire
-    :param eta:
-    :param rho:
-    :return:
-    """
     if symbolic:
         s, v = sp.symbols('s v')
         rho, eta = sp.Float(rho), sp.Float(eta)
         rho_bar = sp.sqrt(1 - rho ** 2)
-        f = sp.Array([[s * sp.sqrt((v + sp.Abs(v)) / 2) * rho, s * sp.sqrt((v + sp.Abs(v)) / 2) * rho_bar], [0, eta * v]])
+        f = sp.Array([[s * sp.sqrt((v + sp.Abs(v)) / 2) * rho, s * sp.sqrt((v + sp.Abs(v)) / 2) * rho_bar],
+                      [0, eta * v]])
         vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[s, v])
         if N > 1:
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
         rho_bar = np.sqrt(1 - rho ** 2)
-        f = lambda s, v: np.array([[s * np.sqrt(np.fmax(0, v)) * rho, s * np.sqrt(np.fmax(0, v)) * rho_bar],
-                                   [0, eta * v]])
+
+        def f(s_, v_):
+            return np.array([[s_ * np.sqrt(np.fmax(0, v_)) * rho, s_ * np.sqrt(np.fmax(0, v_)) * rho_bar],
+                             [0, eta * v_]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
     return vec_field
 
 
 def wrong_black_scholes_vector_field(sigma=0.2, eta=0.1, symbolic=True, norm=ta.l1, N=1, h=1e-07):
-    """
-    aovnire
-    :param eta:
-    :param rho:
-    :return:
-    """
     if symbolic:
         s, v = sp.symbols('s v')
         sigma, eta = sp.Float(sigma), sp.Float(eta)
@@ -450,8 +451,8 @@ def wrong_black_scholes_vector_field(sigma=0.2, eta=0.1, symbolic=True, norm=ta.
             for _ in range(1, N):
                 vec_field.new_derivative()
     else:
-        f = lambda s, v: np.array([[sigma * s, eta * v * s], [0, 1]])
-        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
+        vec_field = vf.VectorFieldNumeric(f=[lambda s_, v_: np.array([[sigma * s_, eta * v_ * s_], [0, 1]])], dim_x=2,
+                                          dim_y=2, h=h, norm=norm)
     return vec_field
 
 
@@ -750,20 +751,13 @@ def compare_n_error_representation(N, n, true_errors, estimated_errors, error_di
     Constructs many plots for the discussion of the examples.
     :param N: The level(s) of the log-ODE method
     :param n: The number(s) of intervals of the log-ODE method
-    :param sig_steps: The number(s) of steps used in the approximation of the signatures
-    :param errors: The errors of the log-ODE approximations
-    :param error_bounds: The error bounds of the log-ODE approximations
-    :param times: The run-times of applying the log-ODE approximations
+    :param true_errors: The actual errors that were made in the approximations
+    :param estimated_errors: The errors estimated by the error representation
+    :param error_differences: The errors after correcting the approximations using the error representation formula
     :param description: Description of the example that is being discussed
-    :param regression: If True, apply log-log-regression and also plot the result
     :param show: If True, shows all the plots when they are constructed
     :param save: If True, saves all the plots (as PDF files) in directory
     :param directory: Folder where the plots are saved (if save is True)
-    :param adaptive_tol: Were the error tolerances of the ODE solvers chosen adaptively?
-    :param atol: (Base) absolute error tolerance of the ODE solver
-    :param rtol: (Base) relative error tolerance of the ODE solver
-    :param sym_vf: Were symbolic vector fields used?
-    :param sym_path: Were symbolic rough paths used?
     :return: Nothing
     """
     description = description[0].upper() + description[1:]
@@ -797,12 +791,11 @@ def compare_n_error_representation(N, n, true_errors, estimated_errors, error_di
 
 
 def apply_example(x, f, y_0, solver='fsss', N=2, partition=None, plot=False, atol=1e-09, rtol=1e-06, N_sol=2,
-                  compute_bound=False, method='RK45', T=1., N_min=1, N_max=4, n=20, speed=-1):
+                  compute_bound=False, method='RK45', T=1., n=20, speed=-1):
     tic = time.perf_counter()
     if solver[0] == 'a':
         partition, y, loc_err = lo.solve(x, f, y_0, solver, N=N, T=T, partition=partition, atol=atol, rtol=rtol,
-                                         method=method, compute_bound=compute_bound, N_sol=N_sol, N_min=N_min,
-                                         N_max=N_max, n=n, speed=speed)
+                                         method=method, compute_bound=compute_bound, N_sol=N_sol, n=n, speed=speed)
         toc = time.perf_counter()
         if plot:
             plt.plot(y[0, :], y[1, :])
@@ -810,7 +803,7 @@ def apply_example(x, f, y_0, solver='fsss', N=2, partition=None, plot=False, ato
         return partition, y, loc_err, toc-tic
     elif solver[0] == 'f':
         y, err = lo.solve(x, f, y_0, solver, N=N, T=T, partition=partition, atol=atol, rtol=rtol, method=method,
-                          compute_bound=compute_bound, N_sol=N_sol, N_min=N_min, N_max=N_max, n=n, speed=speed)
+                          compute_bound=compute_bound, N_sol=N_sol, n=n, speed=speed)
         toc = time.perf_counter()
         if plot:
             plt.plot(y[0, :], y[1, :])
@@ -956,15 +949,7 @@ def discussion(ex, show=False, save=False, solver='fsss', N_sol=2):
         4: Path is four-dimensional
     :param show: Shows all the plots that are made
     :param save: Saves all the plots that are made
-    :param rounds: Number of times each problem is solved (to get a better estimate of the run time)
-    :param adaptive_tol: If true, takes into account that the error tolerance of the ODE solver must scale with the
-        number of intervals used. Uses this to try to eliminate the error from the ODE solver
-    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
-        numerically
-    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
-        numerically
-    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
-        the inaccurate but faster algorithm
+    :param solver: Which Log-ODE solver should be used
     :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
     :return: None
     """
@@ -1015,23 +1000,23 @@ def discussion(ex, show=False, save=False, solver='fsss', N_sol=2):
 
         for i in range(len(N)):
             for j in range(len(n)):
-                for l in range(len(sig_steps)):
-                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
+                for m in range(len(sig_steps)):
+                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[m]}")
                     if len(sig_steps) > 1:
-                        x.sig_steps = sig_steps[l]
+                        x.sig_steps = sig_steps[m]
                     sol, err, tim = apply_example(x=x, f=f, y_0=y_0, partition=np.linspace(0, T, n[j]+1), N=N[i],
                                                   atol=atol, rtol=rtol, solver=solver, N_sol=N_sol)
-                    solutions[i, j, l, :] = sol[:, -1]
-                    error_bounds[i, j, l] = err
-                    times[i, j, l] = tim
-                    true_errors[i, j, l] = ta.l1(sol[:, -1] - true_sol)
+                    solutions[i, j, m, :] = sol[:, -1]
+                    error_bounds[i, j, m] = err
+                    times[i, j, m] = tim
+                    true_errors[i, j, m] = ta.l1(sol[:, -1] - true_sol)
 
                 if len(sig_steps) > 1:
-                    compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :],
-                                      description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                    compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :], description, True,
+                                      show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
             if len(n) > 1:
-                for l in range(len(sig_steps)):
-                    compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], error_bounds[i, :, l], times[i, :, l],
+                for m in range(len(sig_steps)):
+                    compare_n(N[i], n, sig_steps[m], true_errors[i, :, m], error_bounds[i, :, m], times[i, :, m],
                               description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
         if len(N) > 1:
             compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
@@ -1039,10 +1024,10 @@ def discussion(ex, show=False, save=False, solver='fsss', N_sol=2):
             compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], error_bounds[:, :, -1], times[:, :, -1], description,
                       True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
             if len(sig_steps) > 4:
-                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
-                          False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
-                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3], description,
-                          True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3],
+                          description, False, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
+                compare_N(N, n, sig_steps[-3], true_errors[:, :, -3], error_bounds[:, :, -3], times[:, :, -3],
+                          description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
 
     elif full:
         true_sol_path = np.array([true_sol.sig(0, i/200., 1)[1] for i in range(201)])
@@ -1065,22 +1050,22 @@ def discussion(ex, show=False, save=False, solver='fsss', N_sol=2):
                 else:
                     atol_ = atol
                     rtol_ = rtol
-                for l in range(len(sig_steps)):
-                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[l]}")
+                for m in range(len(sig_steps)):
+                    print(f"N = {N[i]}, n = {n[j]}, sig_steps = {sig_steps[m]}")
                     if len(sig_steps) > 1:
-                        x.sig_steps = sig_steps[l]
+                        x.sig_steps = sig_steps[m]
                     sol, _, tim = apply_example(x=x, f=f, y_0=y_0, partition=np.linspace(0, T, n[j]+1), N=N[i],
                                                 atol=atol_, rtol=rtol_, solver=solver, N_sol=N_sol)
-                    solutions[i, j, l, :] = sol.sig(0, T, N_sol).to_array()
-                    times[i, j, l] = tim
-                    true_errors[i, j, l] = ta.l1(solutions[i, j, l, :] - true_sol)
+                    solutions[i, j, m, :] = sol.sig(0, T, N_sol).to_array()
+                    times[i, j, m] = tim
+                    true_errors[i, j, m] = ta.l1(solutions[i, j, m, :] - true_sol)
 
                 if len(sig_steps) > 1:
                     compare_sig_steps(N[i], n[j], sig_steps, true_errors[i, j, :], times[i, j, :], description,
                                       True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
             if len(n) > 1:
-                for l in range(len(sig_steps)):
-                    compare_n(N[i], n, sig_steps[l], true_errors[i, :, l], None, times[i, :, l],
+                for m in range(len(sig_steps)):
+                    compare_n(N[i], n, sig_steps[m], true_errors[i, :, m], None, times[i, :, m],
                               description, True, show, save, directory, adaptive_tol, atol, rtol, sym_vf, sym_path)
         if len(N) > 1:
             compare_N(N, n, sig_steps[-1], true_errors[:, :, -1], None, times[:, :, -1], description,
@@ -1104,16 +1089,8 @@ def error_representation_discussion(ex, show=False, save=False, speed=-1):
         4: Path is four-dimensional
     :param show: Shows all the plots that are made
     :param save: Saves all the plots that are made
-    :param rounds: Number of times each problem is solved (to get a better estimate of the run time)
-    :param adaptive_tol: If true, takes into account that the error tolerance of the ODE solver must scale with the
-        number of intervals used. Uses this to try to eliminate the error from the ODE solver
-    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
-        numerically
-    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
-        numerically
-    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
-        the inaccurate but faster algorithm
-    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
+    :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
+        estimated global error. If speed is -1, automatically finds a good value for speed
     :return: None
     """
     atol = 1e-09
@@ -1181,16 +1158,8 @@ def adaptive_error_fixed_N_discussion(ex, show=False, save=False, speed=-1):
         4: Path is four-dimensional
     :param show: Shows all the plots that are made
     :param save: Saves all the plots that are made
-    :param rounds: Number of times each problem is solved (to get a better estimate of the run time)
-    :param adaptive_tol: If true, takes into account that the error tolerance of the ODE solver must scale with the
-        number of intervals used. Uses this to try to eliminate the error from the ODE solver
-    :param sym_path: If true, uses symbolic computation for the signature increments. Else, approximates them
-        numerically
-    :param sym_vf: If true, uses symbolic computation for the vector field derivatives. Else, approximates them
-        numerically
-    :param full: If 0, solves the ordinary (not full) RDE. If 1, solves the full RDE. If 2, solves the full RDE with
-        the inaccurate but faster algorithm
-    :param N_sol: Only relevant if full == 1 or full == 2. Is the level of the full solution that is computed
+    :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
+        estimated global error. If speed is -1, automatically finds a good value for speed
     :return: None
     """
     atol = 1e-05
@@ -1210,6 +1179,8 @@ def adaptive_error_fixed_N_discussion(ex, show=False, save=False, speed=-1):
     abs_estimated_errors = np.zeros(len(N))
     abs_true_errors = np.zeros(len(N))
     abs_differences = np.zeros(len(N))
+
+    partition = np.linspace(0, T, 2)  # to avoid IDE warnings about potentially undefined object partition
 
     for i in range(len(N)):
         print(f"N = {N[i]}")
@@ -1271,12 +1242,7 @@ def accuracy_of_signature(m=2):
     T = 0.1
     f = smooth_2x2_vector_field(N=3)
     y_0 = np.array([0, 0])
-    # n_vec = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256])
-    # n_sig_vec = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144])
     n_vec = np.array([1, 2, 4, 8, 16])
-    # n_sig_vec = np.array([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024])
-    # n_sig_vec = np.array([1, 3, 9, 27, 81, 243, 729, 2187, 6561])
-    # n_sig_vec = np.array([1, 4, 16, 64, 256, 1024, 4096, 16384])
     n_sig_vec = np.array([1, 3, 7, 18, 50, 150, 300, 700, 1575, 3150, 6300])
     n_total = n_vec[-1] * n_sig_vec[-1]
     errors = np.empty((2, len(n_vec), len(n_sig_vec), m))
@@ -1287,8 +1253,8 @@ def accuracy_of_signature(m=2):
         W = np.zeros((n_total+1, 2))
         W[1:, :] = np.cumsum(dW, axis=0)
 
-        brownian_path = rp.RoughPathDiscrete(times=np.linspace(0, 1, n_total+1), values=W, p=1, save_level=1)
-        true_solution, _ = lo.solve_fixed(x=brownian_path, f=f, y_0=y_0, N=1,
+        brownian_path_ = rp.RoughPathDiscrete(times=np.linspace(0, 1, n_total+1), values=W, p=1, save_level=1)
+        true_solution, _ = lo.solve_fixed(x=brownian_path_, f=f, y_0=y_0, N=1,
                                           partition=np.linspace(0, 1, n_total+1), atol=1e-08, rtol=1e-06,
                                           compute_bound=False)
         true_solution = true_solution[:, -1]
@@ -1299,11 +1265,11 @@ def accuracy_of_signature(m=2):
                 print(i, j, k)
                 n_loc = n_vec[j] * n_sig_vec[k]
                 W_loc = W[::n_total//n_loc]
-                brownian_path = rp.RoughPathDiscrete(times=np.linspace(0, 1, n_loc+1), values=W_loc, p=2.1,
-                                                     save_level=3)
+                brownian_path_ = rp.RoughPathDiscrete(times=np.linspace(0, 1, n_loc+1), values=W_loc, p=2.1,
+                                                      save_level=3)
                 for a in range(2):
                     print(i, j, k, a)
-                    approx_solution, _ = lo.solve_fixed(x=brownian_path, f=f, y_0=y_0, N=a+2,
+                    approx_solution, _ = lo.solve_fixed(x=brownian_path_, f=f, y_0=y_0, N=a+2,
                                                         partition=np.linspace(0, 1, n_vec[j]+1))
                     approx_solutions[a, j, k, :] = approx_solution[:, -1]
                     errors[a, j, k, i] = ta.l1(approx_solutions[a, j, k, :] - true_solution)
@@ -1323,6 +1289,7 @@ def accuracy_of_signature(m=2):
             plt.show()
 
     return avg_errors, std_errors
+
 
 '''
 
@@ -1420,12 +1387,12 @@ def accuracy_of_level_N_signature(N, log_n, m):
 
     for i in range(m):
         print(i)
-        brownian_path = np.zeros((n+1, 2))
-        brownian_path[1:, :] = np.cumsum(np.random.normal(0, 1/np.sqrt(n), (n, 2)), axis=0)
-        true_sig = ta.sig(brownian_path, N)
+        brownian_path_ = np.zeros((n+1, 2))
+        brownian_path_[1:, :] = np.cumsum(np.random.normal(0, 1/np.sqrt(n), (n, 2)), axis=0)
+        true_sig = ta.sig(brownian_path_, N)
         for j in range(len(n_vec)):
             print(i, j)
-            approx_sig = ta.sig(brownian_path[::n//n_vec[j]], N)
+            approx_sig = ta.sig(brownian_path_[::n//n_vec[j]], N)
             errors[j, i] = (approx_sig - true_sig).norm(N)
 
     avg_errors = np.average(errors, axis=1)
@@ -1439,5 +1406,3 @@ def accuracy_of_level_N_signature(N, log_n, m):
     plt.ylabel('Error')
     plt.title(f'Error in the level {N} signature for Brownian motion')
     plt.show()
-
-

@@ -1,7 +1,6 @@
 import numpy as np
 import sympy as sp
 import tensoralgebra as ta
-import oneform as of
 
 
 class VectorField:
@@ -366,8 +365,9 @@ class VectorFieldSymbolic(VectorField):
 def matrix_multiplication_vector_field(d, e=0, norm=None):
     """
     Returns the vector field f in L(R^(d^2), Lip(R^(d^2), R^(e^2))) given by f(y)x = yx, where yx is the matrix
-    multiplication of two dxd matrices.
-    :param d: Dimension of the vector field
+    multiplication of the exd matrix y and the dxd matrix x.
+    :param d: Dimension of the rough path
+    :param e: Dimension of the solution. If e == 0, sets e = d
     :param norm: The norm that should be used
     :return: The vector field
     """

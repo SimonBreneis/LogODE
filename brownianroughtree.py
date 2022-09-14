@@ -1,10 +1,5 @@
 import time
-
 import numpy as np
-import scipy
-import sympy as sp
-from scipy import special
-import p_var
 import tensoralgebra as ta
 import roughpath as rp
 import os
@@ -15,10 +10,12 @@ def interpolate_Brownian_path(path, dt, has_time):
     if has_time:
         new_path[0, :] = np.linspace(path[0, 0], path[0, -1], new_path.shape[1])
         new_path[1:, ::2] = path[1:, :]
-        new_path[1:, 1::2] = (path[1:, :-1] + path[1:, 1:])/2 + np.random.normal(0, np.sqrt(dt)/2, (path.shape[0]-1, path.shape[1]-1))
+        new_path[1:, 1::2] = (path[1:, :-1] + path[1:, 1:]) / 2 \
+            + np.random.normal(0, np.sqrt(dt) / 2, (path.shape[0] - 1, path.shape[1] - 1))
     else:
         new_path[:, ::2] = path
-        new_path[:, 1::2] = (path[:, :-1] + path[:, 1:])/2 + np.random.normal(0, np.sqrt(dt)/2, (path.shape[0], path.shape[1]-1))
+        new_path[:, 1::2] = (path[:, :-1] + path[:, 1:]) / 2 \
+            + np.random.normal(0, np.sqrt(dt) / 2, (path.shape[0], path.shape[1] - 1))
     return new_path
 
 
@@ -41,14 +38,18 @@ class BrownianRoughNode:
                 else:
                     if self.tree.has_time:
                         self.path = np.zeros((self.tree.full_dim, 2))
-                        self.path[1, 0] = self.tree.T * 2**(-self.depth)
-                        self.path[1, 1:] = np.random.normal(0, np.sqrt(self.tree.T * 2**(-self.depth)), self.tree.dim)
+                        self.path[1, 0] = self.tree.T * 2 ** (-self.depth)
+                        self.path[1, 1:] = np.random.normal(0, np.sqrt(self.tree.T * 2 ** (-self.depth)), self.tree.dim)
             if force == -1:
                 while self.path.shape[1] < 2**(np.fmax(self.depth*(level-1), 0))+1:
-                    self.path = interpolate_Brownian_path(self.path, dt=self.tree.T/(2**self.depth * (self.path.shape[1]-1)), has_time=self.tree.has_time)
+                    self.path = interpolate_Brownian_path(self.path,
+                                                          dt=self.tree.T / (2 ** self.depth * (self.path.shape[1] - 1)),
+                                                          has_time=self.tree.has_time)
             else:
-                while self.path.shape[1] < 2**force + 1:
-                    self.path = interpolate_Brownian_path(self.path, dt=self.tree.T/(2**self.depth * (self.path.shape[1]-1)), has_time=self.tree.has_time)
+                while self.path.shape[1] < 2 ** force + 1:
+                    self.path = interpolate_Brownian_path(self.path,
+                                                          dt=self.tree.T / (2 ** self.depth * (self.path.shape[1] - 1)),
+                                                          has_time=self.tree.has_time)
         else:
             self.left.refine_path(level)
             self.right.refine_path(level)
@@ -66,10 +67,12 @@ class BrownianRoughNode:
     def split(self):
         if self.is_leave:
             if self.path.shape[1] == 2:
-                self.path = interpolate_Brownian_path(self.path, self.tree.T/(2**self.depth), has_time=self.tree.has_time)
-            half = int((self.path.shape[1]+1)/2)
-            self.left = BrownianRoughNode(tree=self.tree, parent=self, path=self.path[:, :half], depth=self.depth+1)
-            self.right = BrownianRoughNode(tree=self.tree, parent=self, path=self.path[:, half-1:], depth=self.depth+1)
+                self.path = interpolate_Brownian_path(self.path, self.tree.T/(2**self.depth),
+                                                      has_time=self.tree.has_time)
+            half = int((self.path.shape[1] + 1) / 2)
+            self.left = BrownianRoughNode(tree=self.tree, parent=self, path=self.path[:, :half], depth=self.depth + 1)
+            self.right = BrownianRoughNode(tree=self.tree, parent=self, path=self.path[:, half - 1:],
+                                           depth=self.depth + 1)
             self.is_leave = False
             self.path = None
 
@@ -139,7 +142,7 @@ class BrownianRoughTree(rp.RoughPath):
         depth = int(np.around(-np.log2(dt)))
         k = int(np.fmin(np.fmax(np.around(s * 2**depth), 0), 2**depth-1))
         if np.abs(depth + np.log2(dt)) > 0.01 or np.abs(np.fmin(np.fmax(s * 2**depth, 0), 2**depth-1) - k) > 0.01:
-            print('gay panic!')
+            print('Problem!')
         k_string = '0'
         if depth > 0:
             k_string_temp = '{0:b}'.format(k)
@@ -184,7 +187,8 @@ def initialize_brownian_rough_tree(dim=2, T=1, has_time=False, depth=10, accurac
     tic = init_time
     for leave in leaves:
         if time.perf_counter() - tic > 10:
-            print(f'{i/len(leaves)*100:.2g}% done, {int((time.perf_counter()-init_time)*(len(leaves)-i)/i)} sec remaining')
+            print(f'{i/len(leaves)*100:.2g}% done, {int((time.perf_counter()-init_time)*(len(leaves)-i)/i)} '
+                  f'sec remaining')
             tic = time.perf_counter()
         i = i+1
         leave.refine_path(level=1, force=accuracy)

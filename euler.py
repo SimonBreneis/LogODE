@@ -1,13 +1,8 @@
-import math
 import time
 import numpy as np
-import scipy
-from scipy import integrate, special, stats
 import roughpath as rp
 import vectorfield as vf
 import tensoralgebra as ta
-import sympy as sp
-import examples as ex
 
 
 def step_sig(g, f, y_0):
@@ -88,8 +83,8 @@ def fixed(x, f, y_0, N, partition):
     for i in range(1, len(partition)):
         toc = time.perf_counter()
         if toc - last_time > 10:
-            print(
-                f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
+            print(f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated '
+                  f'{int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
             last_time = toc
         y[:, i] = step(x, f, y[:, i - 1], partition[i - 1], partition[i], N)
     return y
@@ -125,8 +120,8 @@ def fixed_full(x, f, y_0, N, partition, lie=True, N_sol=None, n_intervals=0):
     for i in range(1, len(partition)):
         toc = time.perf_counter()
         if toc - last_time > 10:
-            print(
-                f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated {int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
+            print(f'{100 * (i - 1) / (len(partition) - 1):.2f}% complete, estimated '
+                  f'{int((toc - tic) / (i - 1) * (len(partition) - i))}s remaining.')
             last_time = toc
         y[i] = step_sig_full(x.sig(partition[i - 1], partition[i], N), f, y[i - 1], lie=lie, N_sol=N_sol,
                              n_intervals=n_intervals)
