@@ -495,7 +495,7 @@ class RoughPathSymbolic(RoughPath):
 
 
 class RoughPathList(RoughPath):
-    def __init__(self, path, p=1., var_steps=15, norm=ta.l1, x_0=None):
+    def __init__(self, path, p=1., var_steps=15, norm=ta.l1):
         """
         This is a representation of the rough path as a list. It is indexed not by time but by the list index. For
         example, instead of calling x.sig(partition[i], partition[i + 1]), you would call x.sig(i, i + 1), where
@@ -505,7 +505,6 @@ class RoughPathList(RoughPath):
         :param p: Roughness of the path
         :param var_steps: Number of steps used in computing the p-variation
         :param norm: Norm used in computing the p-variation
-        :param x_0: Initial value of the rough path, is automatically set to path[0]
         """
         x_0 = path[0]
         super().__init__(p, var_steps, norm, x_0)
@@ -521,7 +520,7 @@ class RoughPathList(RoughPath):
 
     def project_space(self, indices):
         return RoughPathList(path=[tens.project_space(indices) for tens in self.path], p=self.p,
-                             var_steps=self.var_steps, norm=self.norm, x_0=self.at_0.project_space(indices))
+                             var_steps=self.var_steps, norm=self.norm)
 
     def p_variation(self, s, t, p, var_steps, norm):
         return -1
@@ -537,6 +536,71 @@ class RoughPathList(RoughPath):
 
     def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
         return -1
+
+
+class RoughPathDyadic(RoughPath):
+    def __init__(self, x, T=1.):
+        """
+        This is essentially any other RoughPath class with the additional property that evaluations of the log-signature
+        on dyadic intervals are saved. May be useful when the path is called many times on the same dyadic grid. May
+        have a slightly worse performance for non-dyadic inputs
+        :param x: An instance of RoughPath
+        :param T: Final time (initial time is 0 by default; needed to know what dyadic intervals actually are)
+        """
+        if isinstance(x, RoughPathDyadic):
+            raise NotImplementedError("It does not make sense to make a RoughPathDyadic out of a RoughPathDyadic.")
+        if isinstance(x, RoughPathList):
+            raise NotImplementedError("An instance of RoughPathList does not have all the required functionality that"
+                                      "is needed for an instance of RoughPathDyadic.")
+        super().__init__(x.p, x.var_steps, x.norm, x.at_0)
+        self.x = x
+        self.T = T
+        self.dyadic_ls = {}
+
+    def at(self, t, N):
+        return self.x.at(t, N)
+
+    def sig(self, s, t, N):
+        return self.logsig(s, t, N).exp()
+
+    def logsig(self, s, t, N):
+        dist = (t - s) / self.T
+        depth = - np.log2(dist)
+        if np.abs(depth - np.around(depth)) < 0.02:
+            depth = int(np.around(depth))
+            s_ind = (s / self.T) * 2 ** depth
+            if np.abs(s_ind - np.around(s_ind)) < 0.05:
+                s_ind = int(np.around(s_ind))
+                key = f'{depth}, {s_ind}'
+                # print(key)
+                if key in self.dyadic_ls:
+                    result = self.dyadic_ls[key]
+                    if result.n_levels() >= N:
+                        return result.project_level(N)
+                result = self.x.logsig(s, t, N)
+                self.dyadic_ls[key] = result
+                return result
+        return self.x.logsig(s, t, N)
+
+    def project_space(self, indices):
+        new_rp = RoughPathDyadic(x=self.x.project_space(indices), T=self.T)
+        new_rp.dyadic_ls = {ls.project_space(indices) for ls in self.dyadic_ls}
+        return new_rp
+
+    def p_variation(self, s, t, p, var_steps, norm):
+        return self.x.p_variation(s, t, p, var_steps, norm)
+
+    def omega(self, s, t, p=0., var_steps=0, norm=None, by_level=False):
+        return self.x.omega(s, t, p, var_steps, norm, by_level)
+
+    def dim(self):
+        return self.x.dim()
+
+    def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
+        return self.x.rough_total_omega_estimate(T, n_intervals, p, var_steps, norm)
+
+    def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
+        return self.x.estimate_p(T, p_lower, p_upper, reset_p)
 
 
 

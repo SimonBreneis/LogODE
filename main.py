@@ -34,7 +34,7 @@ profile("lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N
 
 time.sleep(360000)
 '''
-discuss_example(x=x, f=f, y_0=np.array([0., 0.]), N_min=2, N_max=2, atol=2e-03, rtol=2e-03, g=g, g_grad=g_grad, n=16,
+discuss_example(x=x, f=f, y_0=np.array([0., 0.]), N_min=1, N_max=2, atol=2e-03, rtol=2e-03, g=g, g_grad=g_grad, n=16,
                 verbose=1)
 
 print('Finished')
