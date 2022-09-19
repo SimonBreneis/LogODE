@@ -313,51 +313,6 @@ def solve_fixed_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, 
     return y, log_signatures, error, time_vec
 
 
-def solve_fixed_full_alt(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
-                         N_sol=None, verbose=0, solution_as_rough_path=True):
-    """
-    Lazy implementation of the Log-ODE method. Returns the full solution, i.e. the solution as a rough path.
-    Really only solves the first level, and afterwards computes the signature. Faster, but in general (for p large)
-    incorrect.
-    :param x: Rough path or a list of log-signatures (in which cases it is assumed that x[i] corresponds to the
-        log-signature of x on [partition[i], partition[i + 1]] with degree N[i], and the parameters partition and N
-        are unnecessary; also note that no computation of a theoretical error bound is possible in this case, as we
-        cannot compute the p-variation of x)
-    :param f: Vector field (non-extended!)
-    :param y_0: Initial condition (tensor or vector)
-    :param N: The degree of the Log-ODE method (f needs to be Lip(N)). May be an integer or an array of length equal
-        to the number of intervals. If x is a list of log-signature, this parameter need not be specified
-    :param partition: Partition of the interval on which we apply the Log-ODE method. If x is a list of log-signatures,
-        this parameter need not be specified
-    :param atol: Absolute error tolerance of the ODE solver
-    :param rtol: Relative error tolerance of the ODE solver
-    :param method: Method for solving the ODEs
-    :param compute_bound: If True, also returns a theoretical error bound (only if x is an instance of rp.RoughPath)
-    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
-    :param verbose: Determines the number of intermediary results printed to the console
-    :param solution_as_rough_path: If True, returns the solution as a rough path, else, returns a list of tensors, with
-        the i-th tensor being the solution at time partition[i]. Can only be true if a partition is specified, as
-        otherwise no rough path can be instantiated
-    :return: The solution, list of the log-signatures on the intervals, error bound (-1 if no norm was specified), and
-        numpy array of computational times for each interval
-    """
-    if N_sol is None:
-        if isinstance(y_0, ta.Tensor):
-            N_sol = y_0.n_levels()
-        else:
-            N_sol = N
-    if isinstance(y_0, ta.Tensor):
-        y_0 = y_0[1]
-    y, log_signatures, error, time_vec = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                                     method=method, compute_bound=compute_bound, verbose=verbose)
-    if solution_as_rough_path and partition is not None:
-        y = rp.RoughPathDiscrete(times=partition, values=y, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol,
-                                 x_0=y_0)
-    else:
-        y = [ta.NumericTensor([1., y[i, :]]).extend_sig(N_sol) for i in range(y.shape[0])]
-    return y, log_signatures, error, time_vec
-
-
 def solve_fixed_adj_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
                          N_sol=None, verbose=0, solution_as_rough_path=True):
     """
@@ -394,64 +349,6 @@ def solve_fixed_adj_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-
     return solve_fixed_full(x=x, f=f_ext, y_0=z_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                             compute_bound=compute_bound, N_sol=N_sol, verbose=verbose,
                             solution_as_rough_path=solution_as_rough_path)
-
-
-def solve_fixed_adj_full_alt(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45',
-                             compute_bound=False, N_sol=None, verbose=0, solution_as_rough_path=True):
-    """
-    Lazy implementation of the Log-ODE method. Returns the full solution z = (x, y), i.e. the solution as a rough
-    path. Really only solves the first level, and afterwards computes the signature. Faster, but in general
-    (for p large) incorrect.
-    :param x: Rough path or a list of log-signatures (in which cases it is assumed that x[i] corresponds to the
-        log-signature of x on [partition[i], partition[i + 1]] with degree N[i], and the parameters partition and N
-        are unnecessary; also note that no computation of a theoretical error bound is possible in this case, as we
-        cannot compute the p-variation of x)
-    :param f: Vector field (non-extended!)
-    :param y_0: Initial condition (tensor or vector)
-    :param N: The degree of the Log-ODE method (f needs to be Lip(N)). May be an integer or an array of length equal
-        to the number of intervals. If x is a list of log-signature, this parameter need not be specified
-    :param partition: Partition of the interval on which we apply the Log-ODE method. If x is a list of log-signatures,
-        this parameter need not be specified
-    :param atol: Absolute error tolerance of the ODE solver
-    :param rtol: Relative error tolerance of the ODE solver
-    :param method: Method for solving the ODEs
-    :param compute_bound: If True, also returns a theoretical error bound (only if x is an instance of rp.RoughPath)
-    :param N_sol: Level of the solution. If None, the level of y_0 (if y_0 is a Tensor), or N as the level
-    :param verbose: Determines the number of intermediary results printed to the console
-    :param solution_as_rough_path: If True, returns the solution as a rough path, else, returns a list of tensors, with
-        the i-th tensor being the solution at time partition[i]. Can only be true if a partition is specified, as
-        otherwise no rough path can be instantiated
-    :return: The solution, list of the log-signatures on the intervals, error bound (-1 if no norm was specified), and
-        numpy array of computational times for each interval
-    """
-    if N_sol is None:
-        if isinstance(y_0, ta.Tensor):
-            N_sol = y_0.n_levels()
-        else:
-            N_sol = N
-    if isinstance(y_0, ta.Tensor):
-        y_0 = y_0[1]
-    y, log_signatures, error, time_vec = solve_fixed(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol,
-                                                     method=method, compute_bound=compute_bound, verbose=verbose)
-    x_dim = x.dim() if isinstance(x, rp.RoughPath) else x[0].dim()
-    z = np.empty((y.shape[0], x_dim + y.shape[1]))
-    if isinstance(x, rp.RoughPath):
-        for i in range(y.shape[0]):
-            z[i, :x_dim] = x.sig(partition[0], partition[i], 1)[1]
-    else:
-        total_incr = 0
-        for i in range(y.shape[0]):
-            total_incr = total_incr + x[i][1]
-            z[i, :x_dim] = total_incr
-    z[:, x_dim:] = y
-    z_0 = np.zeros(x_dim + y.shape[1])
-    z_0[x_dim:] = y_0
-    if solution_as_rough_path:
-        z = rp.RoughPathDiscrete(times=partition, values=z, p=x.p, var_steps=x.var_steps, norm=x.norm, save_level=N_sol,
-                                 x_0=z_0)
-    else:
-        z = [ta.NumericTensor([1., z[i, :]]).extend_sig(N_sol) for i in range(z.shape[0])]
-    return z, log_signatures, error, time_vec
 
 
 def solve_error_tolerance(solver=None, n=16, T=1., atol=1e-04, rtol=1e-02, verbose=0):
@@ -1113,15 +1010,9 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, g=None, g_grad=None, ato
     elif solver == 'ffss':
         return solve_fixed_full(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                                 compute_bound=compute_bound, N_sol=N_sol)
-    elif solver == 'ffsa':
-        return solve_fixed_full_alt(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                                    compute_bound=compute_bound, N_sol=N_sol)
     elif solver == 'ffas':
         return solve_fixed_adj_full(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
                                     compute_bound=compute_bound, N_sol=N_sol)
-    elif solver == 'ffaa':
-        return solve_fixed_adj_full_alt(x, f, y_0, N=N, partition=partition, atol=atol, rtol=rtol, method=method,
-                                        compute_bound=compute_bound, N_sol=N_sol)
     elif solver == 'fssr':
         return solve_fixed_error_representation(x, f, y_0, N=N, partition=partition, g=g, g_grad=g_grad, atol=atol,
                                                 rtol=rtol, method=method, speed=speed)
