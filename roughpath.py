@@ -494,6 +494,52 @@ class RoughPathSymbolic(RoughPath):
                                  norm=self.norm, x_0=self.at_0.project_space(indices))
 
 
+class RoughPathList(RoughPath):
+    def __init__(self, path, p=1., var_steps=15, norm=ta.l1, x_0=None):
+        """
+        This is a representation of the rough path as a list. It is indexed not by time but by the list index. For
+        example, instead of calling x.sig(partition[i], partition[i + 1]), you would call x.sig(i, i + 1), where
+        partition is the underlying partition of this rough path. Note that the rough path does not know or save the
+        partition.
+        :param path: A list of tensors, where path[i] is the path at time partition[i]
+        :param p: Roughness of the path
+        :param var_steps: Number of steps used in computing the p-variation
+        :param norm: Norm used in computing the p-variation
+        :param x_0: Initial value of the rough path, is automatically set to path[0]
+        """
+        x_0 = path[0]
+        super().__init__(p, var_steps, norm, x_0)
+        self.path = path
+
+    def at(self, t, N):
+        return self.path[t].extend_sig(N)
+
+    def sig(self, s, t, N):
+        computation_level = int(np.fmin(np.fmax(self.path[s].n_levels(), self.path[t].n_levels()), N))
+        return (self.path[s].inverse().extend_sig(computation_level)
+                * self.path[t].extend_sig(computation_level)).extend_sig(N)
+
+    def project_space(self, indices):
+        return RoughPathList(path=[tens.project_space(indices) for tens in self.path], p=self.p,
+                             var_steps=self.var_steps, norm=self.norm, x_0=self.at_0.project_space(indices))
+
+    def p_variation(self, s, t, p, var_steps, norm):
+        return -1
+
+    def omega(self, s, t, p=0., var_steps=0, norm=None, by_level=False):
+        return -1
+
+    def dim(self):
+        return self.path[0].dim()
+
+    def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
+        return -1
+
+    def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
+        return -1
+
+
+
 def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1, x_0=None):
     """
     Given the sequence X_{0, t_i} of (truncated) signatures of X for t_i in times, returns the corresponding RoughPath

@@ -78,7 +78,7 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
         print(f'The number of intervals used is {len(partition) - 1}.')
         print('Computing a reference solution on a finer grid')
         fine_partition = np.linspace(0, T, 8 * len(partition) - 7)
-        good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=fine_partition,
+        good_y, _, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=fine_partition,
                                       atol=atol / len(fine_partition),
                                       rtol=rtol / len(fine_partition), method=method)
         if isinstance(y, rp.RoughPath):
