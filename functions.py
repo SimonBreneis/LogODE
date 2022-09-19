@@ -97,7 +97,7 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
         for i in range(len(partition) - 1):
             fine_partition[8 * i:(8 * i + 9)] = np.linspace(partition[i], partition[i + 1], 9)
             fine_N[8 * i:8 * (i + 1)] = np.ones(8, dtype=int) * N[i]
-        good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=fine_N, partition=fine_partition,
+        good_y, _, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=fine_N, partition=fine_partition,
                                       atol=atol / len(fine_partition),
                                       rtol=rtol / len(fine_partition), method=method)
         print('Computed a reference solution on a finer grid')
