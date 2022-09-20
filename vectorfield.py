@@ -17,7 +17,7 @@ class VectorField:
         :param norm: Vector space norm used for estimating the norm of f
         """
         self.exact_der = len(f)
-        self.f = [f[i] for i in range(self.exact_der)]  # vector field derivatives
+        self.f = f.copy()  # vector field derivatives
         self.ordinary_derivatives = [f[0]]  # ordinary
         self.norm = norm
         self.global_norm = [0.]  # the ith entry is a (lower) estimate of the norm \|f^{\circ i}\|_\infty
@@ -35,33 +35,38 @@ class VectorField:
         """
         self.local_norm = [0.]*len(self.local_norm)
 
-    def derivative(self, y, dx):
+    def derivative(self, y, dx, rank):
         """
         Computes the derivative of the vector field.
         :param y: Point at which the derivative is calculated
         :param dx: Direction to which the vector field is applied, an n-tensor
+        :param rank: Rank n of the n-tensor dx
         :return: An approximation of the n-th derivative
         """
         pass
 
-    def apply(self, ls, compute_norm=False):
+    def apply(self, ls, compute_norm=False, flattened=False):
         """
         Computes the vector field used in the Log-ODE method.
         :param ls: The log-signature of the driving path up to level deg
         :param compute_norm: If True, additionally computes the norm of the vector field
+        :param flattened: Whether the log-signature should be used in flattened form (for speed-up reasons). Do not
+            manually change this parameter!
         :return: Solution on partition points
         """
         deg = ls.n_levels()
 
         if not compute_norm or self.norm is None:
-            return lambda y: np.sum(np.array([self.derivative(y, ls[i]) for i in range(1, deg+1)]), axis=0)
+            return lambda y: np.sum(np.array([self.derivative(y, ls.flatten(i) if flattened else ls[i], i)
+                                              for i in range(1, deg + 1)]), axis=0)
 
         def compute_vf_and_norm(y):
             while deg > len(self.local_norm):
                 self.local_norm.append(0.)
                 self.global_norm.append(0.)
-            ls_norms = np.array([ls.norm(i, self.norm) for i in range(1, deg+1)])
-            summands = np.array([self.derivative(y, ls[i]) for i in range(1, deg+1)])
+            ls_norms = np.array([ls.norm(i, self.norm) for i in range(1, deg + 1)])
+            summands = np.array([self.derivative(y, ls.flatten(i) if flattened else ls[i], i)
+                                 for i in range(1, deg + 1)])
             vf = np.sum(summands, axis=0)
             for i in range(deg):
                 local_local_norm = (self.norm(summands[i]) / ls_norms[i]) ** (1. / (i + 1))
@@ -131,23 +136,16 @@ class VectorFieldNumeric(VectorField):
         self.flow_one_form = self.compute_flow_one_form()  # Suppose that f is in L(R^d, Lip(R^e, R^e)). Returns the
         # one-form g in L(R^(d+e), Lip(R^(d+e), R^(exe))) with g(x, y) = (f'(y) 0).
 
-    def derivative(self, y, dx):
-        """
-        Computes the derivative of the vector field.
-        :param y: Point at which the derivative is calculated
-        :param dx: Direction to which the vector field is applied, an n-tensor
-        :return: An approximation of the n-th derivative
-        """
-        N = len(dx.shape)
-        if N <= self.exact_der:
-            return self.f[N - 1](y, dx)
+    def derivative(self, y, dx, rank):
+        if rank <= self.exact_der:
+            return self.f[rank - 1](y, dx)
         result = 0
         for i in range(self.dim_x):
             vec = np.zeros(self.dim_x)
             vec[i] = 1.
             direction = self.f[0](y, vec)
-            result += (self.derivative(y + self.h / 2 * direction, dx[i, ...])
-                       - self.derivative(y - self.h / 2 * direction, dx[i, ...])) / self.h
+            result += (self.derivative(y + self.h / 2 * direction, dx[i, ...], rank - 1)
+                       - self.derivative(y - self.h / 2 * direction, dx[i, ...], rank - 1)) / self.h
         return result
 
     def extend(self, level_y):
@@ -168,7 +166,7 @@ class VectorFieldNumeric(VectorField):
             if self.dim_y == 1:
                 extended_dim = level_y + 1
             else:
-                extended_dim = int(np.around((self.dim_y**(level_y+1) - 1)/(self.dim_y - 1)))
+                extended_dim = int(np.around((self.dim_y ** (level_y + 1) - 1) / (self.dim_y - 1)))
             self.full_vf[level_y] = VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=extended_dim, h=self.h,
                                                        norm=self.norm)
         return self.full_vf[level_y]
@@ -187,7 +185,7 @@ class VectorFieldNumeric(VectorField):
                 result[self.dim_x:] = self.f[0](y[self.dim_x:], x)
                 return result
 
-            self.adj_vf = VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x+self.dim_y, h=self.h,
+            self.adj_vf = VectorFieldNumeric(f=[f], dim_x=self.dim_x, dim_y=self.dim_x + self.dim_y, h=self.h,
                                              norm=self.norm)
         return self.adj_vf
 
@@ -199,8 +197,8 @@ class VectorFieldNumeric(VectorField):
             for i in range(self.dim_y):
                 e_i = np.zeros(self.dim_y)
                 e_i[i] = 1
-                derivative = (self.f[0](y + self.h/2 * e_i, dx) - self.f[0](y - self.h/2 * e_i, dx))/self.h
-                result[(slice(i, i + self.dim_y*self.dim_y, self.dim_y),)] = derivative
+                derivative = (self.f[0](y + self.h/2 * e_i, dx) - self.f[0](y - self.h/2 * e_i, dx)) / self.h
+                result[(slice(i, i + self.dim_y * self.dim_y, self.dim_y),)] = derivative
             return result
         return g
 
@@ -208,7 +206,7 @@ class VectorFieldNumeric(VectorField):
         if self.flow_vf is None:
             def flow_f(v, dz):
                 z = v[:(self.dim_x + self.dim_y)]
-                result = np.empty(self.dim_x + self.dim_y + self.dim_y*self.dim_y)
+                result = np.empty(self.dim_x + self.dim_y + self.dim_y * self.dim_y)
                 result[:(self.dim_x + self.dim_y)] = dz
                 result[(self.dim_x + self.dim_y):] = self.flow_one_form(z, dz)
                 return result
@@ -222,7 +220,7 @@ class VectorFieldNumeric(VectorField):
             return self.f[0](y[self.dim_x:], x[:self.dim_x])
 
         def f_2(y, x):
-            result = np.empty(self.dim_x + 2*self.dim_y)
+            result = np.empty(self.dim_x + 2 * self.dim_y)
             result[:(self.dim_x + self.dim_y)] = x
             result[(self.dim_x + self.dim_y):] = f_1(y[:(self.dim_x + self.dim_y)], x)
             return result
@@ -247,9 +245,10 @@ class VectorFieldSymbolic(VectorField):
         """
         super().__init__(f, norm)
         self.variables = variables
-        self.f_num = [sp.lambdify(self.variables, self.f[i], modules=['numpy', 'sympy']) for i in range(len(f))]
-        self.dim_x = self.f[0].shape[1]
-        self.dim_y = self.f[0].shape[0]
+        self.dim_x = int(self.f[0].shape[1])
+        self.dim_y = int(self.f[0].shape[0])
+        self.f_num = [sp.lambdify(self.variables, sp.reshape(sp.flatten(self.f[i]), [self.dim_x ** (i + 1)]),
+                                  modules=['numpy', 'sympy']) for i in range(len(f))]
 
     def new_derivative(self):
         """
@@ -264,30 +263,18 @@ class VectorFieldSymbolic(VectorField):
         permutations[1] = 0
         self.f.append(sp.permutedims(sp.tensorcontraction(sp.tensorproduct(base_func, der_highest_der), (0, 2)),
                                      permutations))
-        self.f_num.append(sp.lambdify(self.variables, self.f[-1], modules=['numpy', 'sympy']))
+        self.f_num.append(sp.lambdify(self.variables, sp.reshape(sp.flatten(self.f[-1]), [self.dim_x ** len(self.f)]),
+                                      modules=['numpy', 'sympy']))
         return None
 
-    def derivative(self, y, dx):
-        """
-        Computes the len(dx.shape)-th term in the log-ODE method.
-        :param y: The current position of the approximated solution
-        :param dx: A level of the log-signature of the underlying path
-        :return: The len(dx.shape)-th term in the log-ODE method
-        """
-        rank = len(dx.shape)
-        return np.tensordot(self.f_num[rank-1](*list(y)), dx, axes=rank)
+    def derivative(self, y, dx, rank):
+        return np.array(self.f_num[rank - 1](*list(y))) @ dx
 
-    def apply(self, ls, compute_norm=False):
-        """
-        Computes the vector field used in the Log-ODE method.
-        :param ls: The log-signature of the driving path up to level deg
-        :param compute_norm: If True, additionally computes the vector field norm
-        :return: Solution on partition points
-        """
+    def apply(self, ls, compute_norm=False, flattened=True):
         deg = ls.n_levels()
         while len(self.f) < deg:
             self.new_derivative()
-        return super().apply(ls, compute_norm)
+        return super().apply(ls, compute_norm, flattened=True)
 
     def extend(self, level_y):
         while len(self.full_vf) <= level_y:
@@ -296,7 +283,7 @@ class VectorFieldSymbolic(VectorField):
             if self.dim_y == 1:
                 n_new_vars = level_y
             else:
-                n_new_vars = (self.dim_y**(level_y+1)-1)/(self.dim_y-1) - self.dim_y
+                n_new_vars = (self.dim_y ** (level_y + 1) - 1) / (self.dim_y - 1) - self.dim_y
             new_vars = list(sp.symbols('a0:%d' % n_new_vars))
             if len(new_vars) == 2:
                 variables = [new_vars[0]] + self.variables + [new_vars[1]]
@@ -318,7 +305,7 @@ class VectorFieldSymbolic(VectorField):
             f = [[0]*self.dim_x for _ in range(self.dim_x + self.dim_y)]
             for i in range(self.dim_x):
                 f[i][i] = 1
-            for i in range(self.dim_x, self.dim_x+self.dim_y):
+            for i in range(self.dim_x, self.dim_x + self.dim_y):
                 for j in range(self.dim_x):
                     f[i][j] = self.f[0][i-self.dim_x, j]
             f = sp.Array(f)
@@ -340,18 +327,18 @@ class VectorFieldSymbolic(VectorField):
             identity = np.eye(self.dim_x + self.dim_y).tolist()
             vf = sp.Array(identity + flow_one_form.tolist())
             new_vars_x = list(sp.symbols('e0:%d' % self.dim_x))
-            new_vars_h = list(sp.symbols('f0:%d' % (self.dim_y*self.dim_y)))
+            new_vars_h = list(sp.symbols('f0:%d' % (self.dim_y * self.dim_y)))
             self.flow_vf = VectorFieldSymbolic(f=[vf], norm=self.norm,
                                                variables=new_vars_x + self.variables + new_vars_h)
         return self.flow_vf
 
     def one_form(self):
-        f_1 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_y)]
+        f_1 = [[0] * (self.dim_x + self.dim_y) for _ in range(self.dim_y)]
         for i in range(self.dim_y):
             for j in range(self.dim_x):
                 f_1[i][j] = self.f[0][i, j]
 
-        f_2 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_x + 2*self.dim_y)]
+        f_2 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_x + 2 * self.dim_y)]
         for i in range(self.dim_x + self.dim_y):
             f_2[i][i] = 1
         for i in range(self.dim_x + self.dim_y, self.dim_x + 2*self.dim_y):
@@ -373,13 +360,13 @@ def matrix_multiplication_vector_field(d, e=0, norm=None):
     """
     if e == 0:
         e = d
-    variables = list(sp.symbols('g0:%d' % (d*e)))
-    f = sp.MutableDenseNDimArray(np.zeros((d*e, d*d)))
+    variables = list(sp.symbols('g0:%d' % (d * e)))
+    f = sp.MutableDenseNDimArray(np.zeros((d * e, d * d)))
     for i in range(e):
         for j in range(d):
-            submatrix = [[0]*d for _ in range(d)]
+            submatrix = [[0] * d for _ in range(d)]
             for k in range(d):
-                submatrix[k][k] = variables[i*d + j]
-            f[i*d:(i+1)*d, j*d:(j+1)*d] = submatrix
+                submatrix[k][k] = variables[i * d + j]
+            f[i * d:(i + 1) * d, j * d:(j + 1) * d] = submatrix
     f = sp.Array(f.tolist())
     return VectorFieldSymbolic(f=[f], norm=norm, variables=variables)

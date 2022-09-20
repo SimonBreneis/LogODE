@@ -22,6 +22,7 @@ class Tensor:
         :param tensor: A list, the ith element is the ith level of the tensor
         """
         self.tensor = tensor
+        self.flattened = None
 
     def __copy__(self):
         """
@@ -291,6 +292,13 @@ class Tensor:
         """
         pass
 
+    def flatten(self, i):
+        """
+        Flattens the tensor.
+        :return: A flattened (1-dimensional) version of self[i]
+        """
+        return self.flattened[i]
+
 
 class SymbolicTensor(Tensor):
     def __init__(self, tensor):
@@ -424,6 +432,12 @@ class SymbolicTensor(Tensor):
             index = index + (slice(front, front+self.dim()),)
         return result
 
+    def flatten(self, i):
+        if self.flattened is None:
+            self.flattened = [sp.Array(sp.flatten(self[i])) if i >= 1 else sp.Array([self[0]])
+                              for i in range(len(self))]
+        return self.flattened[i]
+
 
 class NumericTensor(Tensor):
     def __init__(self, tensor):
@@ -541,6 +555,11 @@ class NumericTensor(Tensor):
             np.save(f, np.array([self[0]]))
             for i in range(1, len(self)):
                 np.save(f, self[i])
+
+    def flatten(self, i):
+        if self.flattened is None:
+            self.flattened = [self[i].flatten() if i >= 1 else np.array([self[0]]) for i in range(len(self))]
+        return self.flattened[i]
 
 
 def trivial_tens_num(dim, N):

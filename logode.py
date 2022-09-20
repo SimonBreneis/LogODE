@@ -165,19 +165,19 @@ def solve_step(x, f, y_s, s, t, N, atol=1e-07, rtol=1e-04, method='RK45', comput
     :param rtol: Relative error tolerance of the ODE solver
     :param method: Method for solving the ODEs
     :param compute_bound: If True, also returns a theoretical error bound
-    :return: Solution on partition points, the log-signature of the interval, estimates for the local norm of f (-1 if
-        not computed) and the control function of x (-1 if not computed)
+    :return: Solution on partition points, estimates for the local norm of f (-1 if not computed) and the control
+        function of x (-1 if not computed)
     """
     if compute_bound:
         f.reset_local_norm()
-    ls = x.logsig(s, t, N)
-    y = solve_step_logsig(g=ls, f=f, y_0=y_s, atol=atol, rtol=rtol, method=method, compute_bound=compute_bound)
+    y = solve_step_logsig(g=x.logsig(s, t, N), f=f, y_0=y_s, atol=atol, rtol=rtol, method=method,
+                          compute_bound=compute_bound)
     if compute_bound:
         f_norm = f.local_norm
         control = x.omega(s, t)
     else:
         f_norm, control = -1, -1
-    return y, ls, f_norm, control
+    return y, f_norm, control
 
 
 def solve_fixed(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
@@ -199,20 +199,19 @@ def solve_fixed(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, metho
     :param method: Method for solving the ODEs
     :param compute_bound: If True, also returns a theoretical error bound (only if x is an instance of rp.RoughPath)
     :param verbose: Determines the number of intermediary results printed to the console
-    :return: Solution on partition points, list of the log-signatures on the intervals, error bound (-1 if no norm was
-        specified), and numpy array of computational times for each interval
+    :return: Solution on partition points, error bound (-1 if not computed), and numpy array of computational times for
+        each interval
     """
     if isinstance(x, rp.RoughPath):
         if isinstance(N, np.ndarray):
             varying_degree = True
         else:
             varying_degree = False
-        time_vec = np.empty(len(partition)-1)
+        time_vec = np.empty(len(partition) - 1)
         N_vec = N
         y = np.zeros(shape=(len(partition), len(y_0)))
         y[0, :] = y_0
         error_bound = 0.
-        log_signatures = [ta.trivial_tens_num(1, 1)] * (len(partition) - 1)
         tic = time.perf_counter()
         last_time = tic
         for i in range(len(partition) - 1):
@@ -225,9 +224,8 @@ def solve_fixed(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, metho
                           f'{int((toc - tic) / i * (len(partition) - i - 1))}s remaining.')
                 last_time = toc
             tic_2 = time.perf_counter()
-            y[i + 1, :], log_signatures[i], vf_norm, omega = solve_step(x, f, y[i, :], s=partition[i],
-                                                                        t=partition[i + 1], N=N, atol=atol, rtol=rtol,
-                                                                        method=method, compute_bound=compute_bound)
+            y[i + 1, :], vf_norm, omega = solve_step(x, f, y[i, :], s=partition[i], t=partition[i + 1], N=N, atol=atol,
+                                                     rtol=rtol, method=method, compute_bound=compute_bound)
             if compute_bound:
                 vf_norm = np.amax(np.array(vf_norm)[:N])
                 error_bound += vf_norm ** (N + 1) * omega ** ((N + 1) / x.p)
@@ -239,7 +237,7 @@ def solve_fixed(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, metho
         else:
             error_bound = -1
     else:
-        time_vec = np.empty(len(partition)-1)
+        time_vec = np.empty(len(partition) - 1)
         y = np.zeros(shape=(len(partition), len(y_0)))
         y[0, :] = y_0
         tic = time.perf_counter()
@@ -255,8 +253,7 @@ def solve_fixed(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, metho
             y[i, :] = solve_step_logsig(x[i], f, y[i-1, :], atol=atol, rtol=rtol, method=method)
             time_vec[i-1] = time.perf_counter()-tic_2
         error_bound = -1
-        log_signatures = x.copy()
-    return y, log_signatures, error_bound, time_vec
+    return y, error_bound, time_vec
 
 
 def solve_fixed_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
@@ -282,8 +279,7 @@ def solve_fixed_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, 
     :param solution_as_rough_path: If True, returns the solution as an instance of RoughPathExact, else, returns the
         solution as an instance of RoughPathList. Can only be true if a partition is specified, as RoughPathExact
         requires a partition
-    :return: The solution, list of the log-signatures on the intervals, error bound (-1 if no norm was specified), and
-        numpy array of computational times for each interval
+    :return: The solution, error bound (-1 if not computed), and numpy array of computational times for each interval
     """
     if N_sol is None:
         if isinstance(y_0, ta.Tensor):
@@ -298,9 +294,8 @@ def solve_fixed_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, 
     if isinstance(y_0, np.ndarray):
         y_0 = ta.sig_first_level_num(y_0, N_sol)
     f_full = f.extend(N_sol)
-    y, log_signatures, error, time_vec = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol,
-                                                     rtol=rtol, method=method, compute_bound=compute_bound,
-                                                     verbose=verbose)
+    y, error, time_vec = solve_fixed(x, f_full, y_0.to_array(), N=N, partition=partition, atol=atol, rtol=rtol,
+                                     method=method, compute_bound=compute_bound, verbose=verbose)
     y = [ta.array_to_tensor(y[i, :], len(y_0[1])) for i in range(y.shape[0])]
     if solution_as_rough_path and partition is not None:
         if isinstance(x, rp.RoughPathContinuous) or isinstance(x, rp.RoughPathExact):
@@ -311,7 +306,7 @@ def solve_fixed_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, 
                                                 var_steps=x.var_steps, norm=x.norm, x_0=y_0)
     else:
         y = rp.RoughPathList(path=y, p=x.p, var_steps=x.var_steps, norm=x.norm)
-    return y, log_signatures, error, time_vec
+    return y, error, time_vec
 
 
 def solve_fixed_adj_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-04, method='RK45', compute_bound=False,
@@ -337,8 +332,7 @@ def solve_fixed_adj_full(x, f, y_0, N=None, partition=None, atol=1e-07, rtol=1e-
     :param solution_as_rough_path: If True, returns the solution as an instance of RoughPathExact, else, returns the
         solution as an instance of RoughPathList. Can only be true if a partition is specified, as RoughPathExact
         requires a partition
-    :return: The solution, list of the log-signatures on the intervals, error bound (-1 if no norm was specified), and
-        numpy array of computational times for each interval
+    :return: The solution, error bound (-1 if not computed), and numpy array of computational times for each interval
     """
     f_ext = f.adjoin()
     x_dim = x.dim() if isinstance(x, rp.RoughPath) else x[0].dim()
@@ -449,9 +443,9 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, g=None, g_grad=Non
     if verbose >= 1:
         print('Now solves for the adjoined full solution z.')
     tic = time.perf_counter()
-    z, log_signatures, _, time_vec = solve_fixed_adj_full(x, f, y_0, N, partition, atol=atol, rtol=rtol, method=method,
-                                                          compute_bound=False, N_sol=N_max, verbose=verbose - 1,
-                                                          solution_as_rough_path=False)
+    z, _, time_vec = solve_fixed_adj_full(x, f, y_0, N, partition, atol=atol, rtol=rtol, method=method,
+                                          compute_bound=False, N_sol=N_max, verbose=verbose - 1,
+                                          solution_as_rough_path=False)
     toc = time.perf_counter()
     reference_time = toc-tic
     y = z.project_space(list(np.arange(x_dim, x_dim + y_dim)))
@@ -526,9 +520,9 @@ def solve_fixed_error_representation(x, f, y_0, N, partition, g=None, g_grad=Non
                 print(f'{100 * i / n:.2f}% complete, estimated {int((toc - tic) / i * (n - i))}s remaining.')
                 last_time = toc
         subpartition = np.linspace(partition[i], partition[i + 1], n_intervals + 1)
-        y_local, _, _, _ = solve_fixed(x, f, y_0=y_on_partition[i, :], N=N[i], partition=subpartition,
-                                       atol=atol / n_intervals, rtol=rtol / n_intervals, method=method,
-                                       compute_bound=False, verbose=verbose - 1)
+        y_local, _, _ = solve_fixed(x, f, y_0=y_on_partition[i, :], N=N[i], partition=subpartition,
+                                    atol=atol / n_intervals, rtol=rtol / n_intervals, method=method,
+                                    compute_bound=False, verbose=verbose - 1)
         local_error = y_local[-1, :] - y_on_partition[i + 1, :]
         local_errors[i] = ta.l1(local_error)
         propagated_local_errors[i, :] = Psi[i].reshape((result_dim, y_dim)) @ local_error
