@@ -360,12 +360,6 @@ class SymbolicTensor(Tensor):
         return SymbolicTensor([other * self[i] for i in range(len(self))])
 
     def inhomogeneous_multiplication(self, alpha):
-        """
-        Multiplies the tensor with alpha inhomogeneously, i.e. the k-th level gets multiplied by alpha
-        (and not alpha^k).
-        :param alpha: The factor, instance of float
-        :return: The product, instance of SymbolicTensor
-        """
         return SymbolicTensor([self[i]*alpha for i in range(self.n_levels()+1)])
 
     def project_level(self, N):
@@ -405,10 +399,6 @@ class SymbolicTensor(Tensor):
         self.tensor = [sp.simplify(self.tensor[i]) for i in range(len(self))]
 
     def to_array(self):
-        """
-        Transforms the tensor into an array.
-        :return: The array
-        """
         dim = self.dim()
         levels = self.n_levels()
         length = int(np.around((dim**(levels+1) - 1)/(dim-1)))
@@ -495,12 +485,6 @@ class NumericTensor(Tensor):
         return NumericTensor([other * self.tensor[i] for i in range(len(self))])
 
     def inhomogeneous_multiplication(self, alpha):
-        """
-        Multiplies the tensor with alpha inhomogeneously, i.e. the k-th level gets multiplied by alpha
-        (and not alpha^k).
-        :param alpha: The factor, instance of float
-        :return: The product, instance of NumericTensor
-        """
         return NumericTensor([self[i]*alpha for i in range(self.n_levels()+1)])
 
     def project_level(self, N):
@@ -522,10 +506,6 @@ class NumericTensor(Tensor):
         return NumericTensor(projected_tensor)
 
     def to_array(self):
-        """
-        Transforms the tensor into an array.
-        :return: The array
-        """
         dim = self.dim()
         levels = self.n_levels()
         if dim == 1:

@@ -1,6 +1,8 @@
 import time
 import matplotlib.pyplot as plt
 import numpy as np
+
+import examples
 import logode as lo
 import roughpath as rp
 import tensoralgebra as ta
@@ -207,3 +209,49 @@ def stupid_flow(x, f, y_0, s, T=1, N=2, n=200, h=3e-04):
         y_pert = lo.solve_fixed(x, f, y_0 + h*perturbation, N, partition)[0][:, -1]
         Psi[:, i] = (y_pert - y)/h
     return Psi
+
+
+def computational_time_increases_linearly_with_number_of_intervals(x, f, y_0, T=1., N=None, n=None, atol=1e-07, rtol=1e-04, method='RK45', plot_title=None, verbose=0):
+    """
+    Plots a plot showing that the computational time increases linearly with the number of intervals.
+    :param x: Rough path
+    :param f: Vector field
+    :param y_0: Initial value
+    :param T: Final time
+    :param N: Numpy array of degrees
+    :param n: Numpy array of number of partition intervals
+    :param atol: Absolute error tolerance for the ODE solver
+    :param rtol: Relative error tolerance for the ODE solver
+    :param method: Method for solving the ODEs
+    :param plot_title: May be a string specifying the title of the plot
+    :param verbose: Determines the number of intermediary results printed to the console
+    :return: The computational times, and the regression exponents and constants for the degrees N
+    """
+    if N is None:
+        N = np.array([1, 2, 3, 4])
+    if n is None:
+        n = np.array([2, 4, 8, 16, 32, 64, 128, 256, 512])
+    exponents = np.empty(len(N))
+    constants = np.empty(len(N))
+    times = np.empty((len(N), len(n)))
+
+    for i in range(len(N)):
+        for j in range(len(n)):
+            if verbose >= 1:
+                print(f'Now computing the solution with N={N[i]} and n={n[j]}.')
+            tic = time.perf_counter()
+            lo.solve_fixed(x=x, f=f, y_0=y_0, N=N[i], partition=np.linspace(0, T, n[j] + 1), atol=atol, rtol=rtol,
+                           method=method, compute_bound=False, verbose=verbose - 1)
+            times[i, j] = time.perf_counter() - tic
+        exponents[i], constants[i], _, _, _ = examples.log_linear_regression(n[1:], times[i, 1:])
+        plt.loglog(n[1:], times[i, 1:], color=color(i, len(N)), label=f'N={N[i]}')
+        plt.loglog(n[1:], constants[i] * n[1:] ** exponents[i], '--', color=color(i, len(N)))
+
+    if plot_title is not None:
+        plt.title(plot_title)
+    plt.xlabel('Number of intervals')
+    plt.ylabel('Time in seconds')
+    plt.legend(loc='upper left')
+    plt.show()
+
+    return times, exponents, constants

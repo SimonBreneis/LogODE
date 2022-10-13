@@ -302,12 +302,12 @@ class VectorFieldSymbolic(VectorField):
 
     def adjoin(self):
         if self.adj_vf is None:
-            f = [[0]*self.dim_x for _ in range(self.dim_x + self.dim_y)]
+            f = [[0] * self.dim_x for _ in range(self.dim_x + self.dim_y)]
             for i in range(self.dim_x):
                 f[i][i] = 1
             for i in range(self.dim_x, self.dim_x + self.dim_y):
                 for j in range(self.dim_x):
-                    f[i][j] = self.f[0][i-self.dim_x, j]
+                    f[i][j] = self.f[0][i - self.dim_x, j]
             f = sp.Array(f)
             new_vars = list(sp.symbols('b0:%d' % self.dim_x))
             self.adj_vf = VectorFieldSymbolic(f=[f], norm=self.norm, variables=new_vars + self.variables)
@@ -338,12 +338,12 @@ class VectorFieldSymbolic(VectorField):
             for j in range(self.dim_x):
                 f_1[i][j] = self.f[0][i, j]
 
-        f_2 = [[0]*(self.dim_x + self.dim_y) for _ in range(self.dim_x + 2 * self.dim_y)]
+        f_2 = [[0] * (self.dim_x + self.dim_y) for _ in range(self.dim_x + 2 * self.dim_y)]
         for i in range(self.dim_x + self.dim_y):
             f_2[i][i] = 1
         for i in range(self.dim_x + self.dim_y, self.dim_x + 2*self.dim_y):
             for j in range(self.dim_x + self.dim_y):
-                f_2[i][j] = f_1[i-self.dim_x-self.dim_y][j]
+                f_2[i][j] = f_1[i - self.dim_x - self.dim_y][j]
         f_2 = sp.Array(f_2)
         new_vars = list(sp.symbols('c0:%d' % (self.dim_x + self.dim_y)))
         return VectorFieldSymbolic(f=[f_2], norm=self.norm, variables=new_vars + self.variables)
