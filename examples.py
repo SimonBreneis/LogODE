@@ -73,7 +73,7 @@ def rough_fractional_Brownian_path_time(H, n, dim, T=1., p=0., var_steps=15, nor
 
 def brownian_path(n, dim, T=1., final_value=None, var_steps=15, norm=ta.l1, save_level=3):
     """
-    Returns a sample path of fractional Brownian motion as an instance of a RoughPath.
+    Returns a sample path of Brownian motion as an instance of a RoughPath.
     :param n: Number of equidistant evaluation points
     :param dim: Dimension of the path
     :param T: Final time
@@ -94,6 +94,32 @@ def brownian_path(n, dim, T=1., final_value=None, var_steps=15, norm=ta.l1, save
         for i in range(dim):
             if final_value[i] is not None:
                 values[:, i] = values[:, i] + (final_value[i] - values[:, -1]) * np.linspace(0, 1, n + 1)
+    if save_level <= 5:
+        return rp.RoughPathDiscrete(times=times, values=values, p=p, var_steps=var_steps, norm=norm,
+                                    save_level=save_level)
+    return rp.RoughPathContinuous(path=scipy.interpolate.interp1d(times, values, axis=0),
+                                  sig_steps=int(max(15, n / 1000)), p=p, var_steps=var_steps, norm=norm)
+
+
+def brownian_path_time(n, dim, T=1., var_steps=15, norm=ta.l1, save_level=3):
+    """
+    Returns a sample path of Brownian motion together with a time component as an instance of a RoughPath.
+    Time is the first component.
+    :param n: Number of equidistant evaluation points
+    :param dim: Dimension of the path
+    :param T: Final time
+    :param var_steps: Number of steps used in approximating p-variation
+    :param norm: Norm for computing p-variation
+    :param save_level: Level up to which the signatures on the time grid are stored
+    :return: An instance of a RoughPath
+    """
+    p = 2.05
+    times = np.linspace(0, T, n + 1)
+    brownian = np.concatenate((np.zeros((1, dim)), np.cumsum(np.random.normal(0, np.sqrt(T / n), (n, dim)), axis=0)),
+                              axis=0)
+    values = np.empty((n + 1, dim + 1))
+    values[:, 0] = times
+    values[:, 1:] = brownian
     if save_level <= 5:
         return rp.RoughPathDiscrete(times=times, values=values, p=p, var_steps=var_steps, norm=norm,
                                     save_level=save_level)
@@ -340,7 +366,7 @@ def smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
 def simple_smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
     if symbolic:
         y, z = sp.symbols('y z')
-        f = sp.Array([[z - y, -z], [sp.tanh(-z), sp.cos(-(y - 2 * z))]])
+        f = sp.Array([[z - y, -z], [sp.tanh(-z), sp.cos(2 * z - y)]])
         vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[y, z])
         if N > 1:
             for _ in range(1, N):
@@ -348,7 +374,7 @@ def simple_smooth_2x2_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
     else:
         def f(y_, x):
             return np.array([(y_[1] - y_[0]) * x[0] - y_[1] * x[1],
-                             np.tanh(-y_[1]) * x[0] + np.cos(-(y_[0] - 2 * y_[1])) * x[1]])
+                             np.tanh(-y_[1]) * x[0] + np.cos(2 * y_[1] - y_[0]) * x[1]])
         vec_field = vf.VectorFieldNumeric(f=[f], dim_x=2, dim_y=2, h=h, norm=norm)
 
     return vec_field
@@ -420,7 +446,7 @@ def langevin_banana_vector_field(symbolic=True, norm=ta.l1, N=1, h=1e-07):
     return vec_field
 
 
-def bergomi_vector_field(eta=2., rho=-0.9, symbolic=True, norm=ta.l1, N=1, h=1e-07):
+def bergomi_vector_field_old(eta=2., rho=-0.9, symbolic=True, norm=ta.l1, N=1, h=1e-07):
     if symbolic:
         s, v = sp.symbols('s v')
         rho, eta = sp.Float(rho), sp.Float(eta)
@@ -454,6 +480,67 @@ def wrong_black_scholes_vector_field(sigma=0.2, eta=0.1, symbolic=True, norm=ta.
         vec_field = vf.VectorFieldNumeric(f=[lambda s_, v_: np.array([[sigma * s_, eta * v_ * s_], [0, 1]])], dim_x=2,
                                           dim_y=2, h=h, norm=norm)
     return vec_field
+
+
+def heston_vector_field(rho, nu, lambda_, theta, symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    if symbolic:
+        s, v = sp.symbols('s v', real=True)
+        rho, nu, lambda_, theta = sp.Float(rho), sp.Float(nu), sp.Float(lambda_), sp.Float(theta)
+        rho_bar = sp.sqrt(1 - rho ** 2)
+        f = sp.Array([[- (v + sp.Abs(v + 1e-7)) / 2 / 2 - rho * nu / 4, rho * sp.sqrt((v + sp.Abs(v + 1e-7)) / 2 + 0.002),
+                       rho_bar * sp.sqrt((v + sp.Abs(v + 1e-7)) / 2 + 0.002)],
+                      [lambda_ * (theta - (v + sp.Abs(v + 1e-7)) / 2) - nu ** 2 / 4, nu * sp.sqrt((v + sp.Abs(v + 1e-7)) / 2 + 0.002), 0]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[s, v])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        rho_bar = np.sqrt(1 - rho ** 2)
+
+        def f(y, x):
+            v = np.fabs(y[1])
+            return np.array([[- v / 2 - rho * nu / 4, rho * np.sqrt(v), rho_bar * np.sqrt(v)],
+                             [lambda_ * (theta - v) - nu ** 2 / 4, nu * np.sqrt(v), 0]]) @ x
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
+    return vec_field
+
+
+def bergomi_vector_field(eta, rho, symbolic=True, norm=ta.l1, N=1, h=1e-07):
+    if symbolic:
+        s, v = sp.symbols('s v', real=True)
+        eta, rho = sp.Float(eta), sp.Float(rho)
+        rho_bar = sp.sqrt(1 - rho ** 2)
+        '''
+        f = sp.Array([[- sp.exp(v) / 2 - rho * eta * sp.exp(v / 2) / 4, rho * sp.exp(v / 2), rho_bar * sp.exp(v / 2)],
+                      [- eta ** 2 / 2, eta, 0]])
+        '''
+        f = sp.Array([[-v * v / 2 + rho * eta / 4 * v, rho * v, rho_bar * v], [-eta * eta / 4 * v, eta / 2 * v, 0]])
+        vec_field = vf.VectorFieldSymbolic(f=[f], norm=norm, variables=[s, v])
+        if N > 1:
+            for _ in range(1, N):
+                vec_field.new_derivative()
+    else:
+        rho_bar = np.sqrt(1 - rho ** 2)
+
+        def f(y, x):
+            v = y[1]
+            return np.array([[- np.exp(v) / 2 - rho * eta * np.exp(v / 2) / 4, rho * np.exp(v / 2),
+                              rho_bar * np.exp(v / 2)],
+                            [- eta ** 2 / 2, eta, 0]]) @ x
+        vec_field = vf.VectorFieldNumeric(f=[f], dim_x=3, dim_y=2, h=h, norm=norm)
+    return vec_field
+
+
+def langevin_vector_field():
+    p, q = sp.symbols('p q', real=True)
+    f = sp.Array([[p, 0], [-4*q*q*q + 4 * q - p, sp.sqrt(2 / 3)]])
+    return vf.VectorFieldSymbolic(f=[f], norm=ta.l1, variables=[q, p])
+
+
+def OU_vector_field():
+    p, q = sp.symbols('p q', real=True)
+    f = sp.Array([[-p, 1], [0, 0]])
+    return vf.VectorFieldSymbolic(f=[f], norm=ta.l1, variables=[p, q])
 
 
 def smoothed_digital_call_option_payoff(K=1., eps=0.01):
@@ -913,6 +1000,17 @@ def ex_smooth_fractional(H=0.5):
     x = smooth_fractional_path(H=H, n=int(n[-1] * sig_steps[-1]), p=1 / H + 0.1, save_level=N[-1])
     f = smooth_2x2_vector_field(symbolic=True, N=N[-1])
     y_0 = np.array([0., 0.])
+    return x, f, y_0, N, n, description, False, True, sig_steps
+
+
+def ex_heston(V_0, rho, nu, lambda_, theta):
+    description = f'Heston, rho={rho:.3f}, nu={nu:.3f}, lambda={lambda_:.3f}, theta={theta:.3f}'
+    n = np.array([1, 2, 3, 4, 6, 10, 16, 25, 40, 63, 100, 158, 251, 398, 631, 1000, 1585])
+    N = np.array([2])
+    sig_steps = np.array([1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000])
+    x = brownian_path_time(n=1000000, dim=2, T=1., save_level=1)
+    f = heston_vector_field(rho=rho, nu=nu, lambda_=lambda_, theta=theta, symbolic=True, N=2)
+    y_0 = np.array([0., V_0])
     return x, f, y_0, N, n, description, False, True, sig_steps
 
 

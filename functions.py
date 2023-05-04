@@ -26,7 +26,10 @@ def color(i, N):
     c = ['r', 'C1', 'y', 'g', 'b', 'purple']
     c_ = ['darkred', 'r', 'C1', 'y', 'lime', 'g', 'deepskyblue', 'b', 'purple', 'deeppink']
     c_short = ['r', 'g', 'b']
+    c_very_short = ['r', 'b']
     c_intermediate = ['r', 'C1', 'g', 'b']
+    if N <= 2:
+        return c_very_short[i % 2]
     if N <= 3:
         return c_short[i % 3]
     if N <= 4:
@@ -80,17 +83,22 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
         print(f'The number of intervals used is {len(partition) - 1}.')
         print('Computing a reference solution on a finer grid')
         fine_partition = np.linspace(0, T, 8 * len(partition) - 7)
-        good_y, _, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=fine_partition,
-                                      atol=atol / len(fine_partition),
-                                      rtol=rtol / len(fine_partition), method=method)
+        _, good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=fine_partition,
+                                         atol=atol / len(fine_partition),
+                                         rtol=rtol / len(fine_partition), method=method)
         if isinstance(y, rp.RoughPath):
-            final_value = y.at(t=T, N=1)[1]
+            final_value = y.at(t=T, N=1)[1][x.dim():]
         else:
             final_value = y[-1, :]
+        good_final_value = good_y[-1, :]
+        if g is not None:
+            final_value = g(final_value)
+            good_final_value = g(good_final_value)
+
         print('Computed a reference solution on a finer grid')
         print(f'The final point of the solution given by the algorithm is {final_value}.')
-        print(f'The reference final point of the solution is {good_y[-1, :]}.')
-        print(f'The global error estimated by comparing the two solution is {ta.l1(final_value - good_y[-1, :])}.')
+        print(f'The reference final point of the solution is {good_final_value}.')
+        print(f'The global error estimated by comparing the two solution is {ta.l1(final_value - good_final_value)}.')
 
     def discuss():
         print('Computing a reference solution on a finer grid')
@@ -99,22 +107,36 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
         for i in range(len(partition) - 1):
             fine_partition[8 * i:(8 * i + 9)] = np.linspace(partition[i], partition[i + 1], 9)
             fine_N[8 * i:8 * (i + 1)] = np.ones(8, dtype=int) * N[i]
-        good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=fine_N, partition=fine_partition,
-                                      atol=atol / len(fine_partition),
-                                      rtol=rtol / len(fine_partition), method=method)
+        _, good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=fine_N, partition=fine_partition,
+                                         atol=atol / len(fine_partition),
+                                         rtol=rtol / len(fine_partition), method=method)
+
+        if isinstance(y, rp.RoughPath):
+            final_value = y.at(t=T, N=1)[1][x.dim():]
+        else:
+            final_value = y[-1, :]
+        good_final_value = good_y[-1, :]
+        if g is not None:
+            g_final_value = g(final_value)
+            g_good_final_value = g(good_final_value)
+        else:
+            g_final_value = final_value
+            g_good_final_value = good_final_value
+
         print('Computed a reference solution on a finer grid')
         print(f'The final point of the solution given by the algorithm with the fully adaptive error representation is '
-              f'{y[-1, :]}.')
-        print(f'The reference final point of the solution is {good_y[-1, :]}.')
+              f'{final_value}.')
+        print(f'The reference final point of the solution is {good_final_value}.')
         global_error = np.sum(prop_loc_err, axis=0)
         print(f'The global error estimated by the error representation is {global_error}, with norm '
               f'{ta.l1(global_error)}.')
-        print(f'The global error estimated by comparing the two solution is {ta.l1(y[-1, :] - good_y[-1, :])}.')
-        corrected_y = y[-1, :] + np.sum(prop_loc_err, axis=0)
+        print(f'The global error estimated by comparing the two solution is '
+              f'{ta.l1(g_final_value - g_good_final_value)}.')
+        corrected_y = g_final_value + global_error
         print(f'The final point of the solution given by the algorithm with the fully adaptive error representation '
               f'after correcting using the error estimate is {corrected_y}.')
         print(f'The global error estimated by comparing the corrected solution with the refined solution is '
-              f'{ta.l1(good_y[-1, :] - corrected_y)}.')
+              f'{ta.l1(g_good_final_value - corrected_y)}.')
         plt.plot(y[:, 0], y[:, 1])
         plt.title('Solution path')
         plt.show()
@@ -137,12 +159,12 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
         plt.show()
 
         plt.plot(partition, y[:, 0], label='first component')
-        plt.plot(partition, y[:, 1], label='second components')
+        plt.plot(partition, y[:, 1], label='second component')
         plt.title('Solution against time')
         plt.xlabel('Time')
         plt.legend(loc='best')
         plt.show()
-
+    '''
     print('Starting to solve the RDE using the fully adaptive error representation')
     partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N_min,
                                                                                  N_max=N_max, atol=atol, rtol=rtol, g=g,
@@ -161,29 +183,153 @@ def discuss_example(x, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None
     print(f'Finished solving the RDE using the fully adaptive error representation and the algorithm which tries '
           f'everything')
     discuss()
-
+    '''
     print('Starting to solve the RDE without the error representation formula, where we solve only for the first level')
     tic = time.perf_counter()
 
-    def solver(partition_):
-        return lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol, method=method,
-                              compute_bound=False, verbose=verbose)[0]
+    if g is None:
+        def solver(partition_):
+            return lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol, method=method,
+                                  compute_bound=False, verbose=verbose)[1]
+    else:
+        def solver(partition_):
+            solution = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol,
+                                      method=method, compute_bound=False, verbose=verbose)[1]
+            return np.array([g(solution[i]) for i in range(len(solution))])
 
-    partition, y = lo.solve_error_tolerance(solver=solver, n=n, T=T, atol=atol, rtol=rtol)
+    partition, y = lo.solve_error_tolerance(solver=solver, n=n, T=T, atol=atol, rtol=rtol, verbose=verbose)
     print(f'Finished solving the RDE without the error representation formula, where we solve only for the first level.'
           f' It took {time.perf_counter() - tic} seconds.')
     small_discussion()
 
     print('Starting to solve the RDE without the error representation formula, where we solve for all levels')
+    tic = time.perf_counter()
 
     def solver(partition_):
-        return lo.solve_fixed_full(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol,
-                                   method=method, compute_bound=False, N_sol=N_max, verbose=verbose)[0]
+        return lo.solve_fixed_adj_full(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol,
+                                       method=method, compute_bound=False, N_sol=N_max, verbose=verbose)[0]
 
-    partition, y = lo.solve_error_tolerance(solver=solver, n=n, T=T, atol=atol, rtol=rtol)
+    partition, y = lo.solve_error_tolerance(solver=solver, n=n, T=T, atol=atol, rtol=rtol, verbose=verbose)
     print(f'Finished solving the RDE without the error representation formula, where we solve only for the first level.'
           f' It took {time.perf_counter() - tic} seconds.')
     small_discussion()
+
+
+def discuss_MC_example(x_fun, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_grad=None, atol=1e-04, rtol=1e-02, m=100,
+                       method='RK45', speed=-1, verbose=0):
+    """
+    Discusses the solution algorithms for RDEs by comparing the predicting adaptive algorithm with the error
+    representation formula, the adaptive algorithm with the error representation formula which tests out everything,
+    the algorithm without the error representation formula which only computes the first level, and the algorithm
+    without the error representation formula which computes the full solution.
+    :param x_fun: Function of an index i generating the i-th rough path
+    :param f: Vector field
+    :param y_0: Initial condition
+    :param N_min: Minimal degree that should be used
+    :param N_max: Maximal degree that should be used
+    :param T: Final time
+    :param n: Initial number of intervals
+    :param g: Payoff function
+    :param g_grad: Gradient of payoff function
+    :param atol: Absolute error tolerance
+    :param rtol: Relative error tolerance
+    :param m: Number of samples
+    :param method: Method for solving the ODEs
+    :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
+        estimated global error. If speed is -1, automatically finds a good value for speed
+    :param verbose: Determines the number of intermediary results printed to the console
+    :return: Nothing
+    """
+    final_adaptive_errors = np.empty(m)
+    final_predicted_errors = np.empty(m)
+    final_corrected_errors = np.empty(m)
+    final_non_adaptive_errors = np.empty(m)
+    adaptive_times = np.empty(m)
+    non_adaptive_times = np.empty(m)
+    adaptive_steps = np.empty(m)
+    non_adaptive_steps = np.empty(m)
+
+    for i in range(m):
+        print(f'Considering path {i + 1} of {m}')
+        x = x_fun(i)
+        print('Starting to solve the RDE using the fully adaptive error representation')
+        if i == 0:
+            partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N_min,
+                                                                                         N_max=N_max, atol=1000000*atol,
+                                                                                         rtol=100000*rtol,
+                                                                                         g=g,
+                                                                                         g_grad=g_grad, n=n, T=T,
+                                                                                         method=method,
+                                                                                         speed=speed, verbose=verbose)
+        tic = time.perf_counter()
+        partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N_min,
+                                                                                     N_max=N_max, atol=atol, rtol=rtol, g=g,
+                                                                                     g_grad=g_grad, n=n, T=T, method=method,
+                                                                                     speed=speed, verbose=verbose)
+        adaptive_times[i] = time.perf_counter() - tic
+        adaptive_steps[i] = len(partition) - 1
+        print(f'Finished solving the RDE using the fully adaptive error representation')
+
+        print('Computing a reference solution on a finer grid')
+        fine_partition = np.empty(8 * len(partition) - 7)
+        fine_N = np.zeros(8 * len(N), dtype=int)
+        for j in range(len(partition) - 1):
+            fine_partition[8 * j:(8 * j + 9)] = np.linspace(partition[j], partition[j + 1], 9)
+            fine_N[8 * j:8 * (j + 1)] = np.ones(8, dtype=int) * N[j]
+        _, good_y, _, _ = lo.solve_fixed(x=x, f=f, y_0=y_0, N=fine_N, partition=fine_partition,
+                                         atol=atol / len(fine_partition),
+                                         rtol=rtol / len(fine_partition), method=method)
+
+        if isinstance(y, rp.RoughPath):
+            final_value = y.at(t=T, N=1)[1][x.dim():]
+        else:
+            final_value = y[-1, :]
+        good_final_value = good_y[-1, :]
+        if g is not None:
+            g_final_value = g(final_value)
+            g_good_final_value = g(good_final_value)
+        else:
+            g_final_value = final_value
+            g_good_final_value = good_final_value
+
+        print('Computed a reference solution on a finer grid')
+        global_error = np.sum(prop_loc_err, axis=0)
+        final_predicted_errors[i] = ta.l1(global_error)
+        final_adaptive_errors[i] = ta.l1(g_final_value - g_good_final_value)
+        corrected_y = g_final_value + global_error
+        final_corrected_errors[i] = ta.l1(g_good_final_value - corrected_y)
+
+        print('Starting to solve the RDE without the error representation formula, where we solve only for the first level')
+
+        if g is None:
+            def solver(partition_):
+                return lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol, method=method,
+                                      compute_bound=False, verbose=verbose)[1]
+        else:
+            def solver(partition_):
+                solution = lo.solve_fixed(x=x, f=f, y_0=y_0, N=N_min, partition=partition_, atol=atol, rtol=rtol,
+                                          method=method, compute_bound=False, verbose=verbose - 1)[1]
+                return np.array([g(solution[i]) for i in range(len(solution))])
+
+        tic = time.perf_counter()
+        partition, y = lo.solve_error_tolerance(solver=solver, n=n, T=T, atol=atol, rtol=rtol, verbose=verbose)
+        non_adaptive_times[i] = time.perf_counter() - tic
+        non_adaptive_steps[i] = len(partition) - 1
+        print(f'Finished solving the RDE without the error representation formula, where we solve only for the first level.'
+              f' It took {time.perf_counter() - tic} seconds.')
+        final_non_adaptive_errors[i] = ta.l1(y[-1, :] - g_good_final_value)
+
+    print(f'Adaptive error {np.average(final_adaptive_errors)} +/- {np.std(final_adaptive_errors) / np.sqrt(m)}')
+    print(f'Predicted error {np.average(final_predicted_errors)} +/- {np.std(final_predicted_errors) / np.sqrt(m)}')
+    print(f'Corrected error {np.average(final_corrected_errors)} +/- {np.std(final_corrected_errors) / np.sqrt(m)}')
+    print(f'Non-adaptive error {np.average(final_non_adaptive_errors)} +/- '
+          f'{np.std(final_non_adaptive_errors) / np.sqrt(m)}')
+    print(f'Adaptive time {np.average(adaptive_times)} +/- {np.std(adaptive_times) / np.sqrt(m)}')
+    print(f'Non-adaptive time {np.average(non_adaptive_times)} +/- {np.std(non_adaptive_times) / np.sqrt(m)}')
+    print(f'Adaptive steps {np.average(adaptive_steps)} +/- {np.std(adaptive_steps) / np.sqrt(m)}')
+    print(f'Non-adaptive steps {np.average(non_adaptive_steps)} +/- {np.std(non_adaptive_steps) / np.sqrt(m)}')
+    return final_adaptive_errors, final_predicted_errors, final_corrected_errors, final_non_adaptive_errors, \
+           adaptive_times, non_adaptive_times, adaptive_steps, non_adaptive_steps
 
 
 def stupid_flow(x, f, y_0, s, T=1, N=2, n=200, h=3e-04):
