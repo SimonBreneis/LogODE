@@ -9,6 +9,34 @@ import examples as ex
 import sympy as sp
 import timeit
 
+import esig
+help(esig)
+
+time.sleep(3600000)
+
+T = 1.
+x = ex.unit_circle(N=3)
+f = ex.smooth_2x2_vector_field(N=3)
+y_0 = np.array([0, 0])
+tic = time.perf_counter()
+_, y, error_bounds, time_vec = logode.solve_fixed(x, f, y_0, N=3, partition=np.linspace(0, 1, 101))
+print((y[-1],))
+print(time.perf_counter() - tic)
+
+tic = time.perf_counter()
+f = ex.smooth_2x2_vector_field(N=3)
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-00, rtol=1e-00)
+print(time.perf_counter() - tic)
+
+tic = time.perf_counter()
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05)
+global_err = np.sum(prop_loc_err, axis=0)
+abs_err = ta.l1(global_err)
+print((y[-1],))
+print(global_err)
+print(time.perf_counter() - tic)
+print('Finished')
+time.sleep(3600000)
 
 '''
 g = lambda y: np.array([y[0]])

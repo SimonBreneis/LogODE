@@ -4,7 +4,7 @@ import tensoralgebra as ta
 
 
 class VectorField:
-    def __init__(self, f, norm=ta.l1):
+    def __init__(self, f, norm=ta.l1, saving_accuracy=0.):
         """
         Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -15,10 +15,19 @@ class VectorField:
             If the derivatives are not specified, then f[0] is the vector field, given as a matrix-valued function
             that takes as input only the position vector y
         :param norm: Vector space norm used for estimating the norm of f
+        :param saving_accuracy: If non-negative, stores previously evaluated vector field derivatives in a dictionary,
+            and reuses them when the vector field is again evaluated at a point that is at most saving_accuracy away (in
+            the specified norm). If saving_accuracy = 0., this implies that the new evaluation point must agree (as a
+            numpy array with floats) completely with the previous evaluation point. If saving_accuracy is negative, no
+            saving or lookup is performed. Changing the parameter after initialization can lead to undesired behaviour
+            and is not recommended.
         """
         self.exact_der = len(f)
         self.f = f.copy()  # vector field derivatives
         self.ordinary_derivatives = [f[0]]  # ordinary
+        self.saving_accuracy = saving_accuracy
+        self.rounding_digits = None if saving_accuracy <= 0 else int(np.around(-np.log10(saving_accuracy)))
+        self.val_dictionary = {}
         self.norm = norm
         self.global_norm = [0.]  # the ith entry is a (lower) estimate of the norm \|f^{\circ i}\|_\infty
         self.local_norm = [0.]
@@ -34,6 +43,50 @@ class VectorField:
         :return: Nothing
         """
         self.local_norm = [0.]*len(self.local_norm)
+
+    def get_key(self, y):
+        """
+        Returns the key of the value dictionary.
+        :param y: Point of evaluation
+        :return: The key for the dictionary
+        """
+        if self.rounding_digits is None:
+            return y.tobytes()
+        return np.round(y, self.rounding_digits).tobytes()
+
+    def get_val(self, y):
+        """
+        Retrieves the value of the vector field derivatives from the dictionary
+        :param y: Point of evaluation
+        :return: The vector field derivatives at y. If nothing had been saved, returns an empty list
+        """
+        if self.saving_accuracy >= 0:
+            dict_key = self.get_key(y)
+            return self.val_dictionary.get(dict_key, [])
+
+    def save_val(self, y, vec_field):
+        """
+        Saves the value of the vector field derivatives to the dictionary.
+        :param y: Point of evaluation
+        :param vec_field: The computed vector field derivatives
+        :return: True if vec_field was saved, False otherwise
+        """
+        if self.saving_accuracy >= 0:
+            previous_val = self.get_val(y)
+            if len(vec_field) >= len(previous_val):
+                dict_key = self.get_key(y)
+                self.val_dictionary[dict_key] = vec_field
+                return True
+        return False
+
+    def eval(self, y, N):
+        """
+        Evaluates all vector field derivatives up to level N.
+        :param y: Point of evaluation
+        :param N: Maximal derivative
+        :return: List of vector field derivatives: [f^{circ 1}, ..., f^{circ N}]
+        """
+        pass
 
     def derivative(self, y, dx, rank):
         """
@@ -57,6 +110,11 @@ class VectorField:
         deg = ls.n_levels()
 
         if not compute_norm or self.norm is None:
+            def log_ode_vec_field(y):
+                vec_field = self.eval(y, deg)
+                return np.sum(np.array([vec_field[i - 1] @ (ls.flatten(i) if flattened else ls[i])
+                                        for i in range(1, deg + 1)]), axis=0)
+            return log_ode_vec_field
             return lambda y: np.sum(np.array([self.derivative(y, ls.flatten(i) if flattened else ls[i], i)
                                               for i in range(1, deg + 1)]), axis=0)
 
@@ -114,7 +172,7 @@ class VectorField:
 
 
 class VectorFieldNumeric(VectorField):
-    def __init__(self, f, dim_x, dim_y, h=1e-06, norm=ta.l1):
+    def __init__(self, f, dim_x, dim_y, h=1e-06, norm=ta.l1, saving_accuracy=0.):
         """
         Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -128,8 +186,14 @@ class VectorFieldNumeric(VectorField):
         :param dim_y: Dimension of the solution y (dimension of the output of f)
         :param h: Step size in numerical differentiation
         :param norm: Vector space norm used for estimating the norm of f
+        :param saving_accuracy: If non-negative, stores previously evaluated vector field derivatives in a dictionary,
+            and reuses them when the vector field is again evaluated at a point that is at most saving_accuracy away (in
+            the specified norm). If saving_accuracy = 0., this implies that the new evaluation point must agree (as a
+            numpy array with floats) completely with the previous evaluation point. If saving_accuracy is negative, no
+            saving or lookup is performed. Changing the parameter after initialization can lead to undesired behaviour
+            and is not recommended.
         """
-        super().__init__(f, norm)
+        super().__init__(f, norm, saving_accuracy)
         self.h = h
         self.dim_x = dim_x
         self.dim_y = dim_y
@@ -230,7 +294,7 @@ class VectorFieldNumeric(VectorField):
 
 
 class VectorFieldSymbolic(VectorField):
-    def __init__(self, f, norm=ta.l1, variables=None):
+    def __init__(self, f, norm=ta.l1, variables=None, saving_accuracy=0.):
         """
         Initialization.
         :param f: List, first element is the vector field. Further elements may be the derivatives of the vector field,
@@ -242,8 +306,14 @@ class VectorFieldSymbolic(VectorField):
             that takes as input only the position vector y
         :param norm: Vector space norm used for estimating the norm of f
         :param variables: The sympy variables with respect to which f is defined
+        :param saving_accuracy: If non-negative, stores previously evaluated vector field derivatives in a dictionary,
+            and reuses them when the vector field is again evaluated at a point that is at most saving_accuracy away (in
+            the specified norm). If saving_accuracy = 0., this implies that the new evaluation point must agree (as a
+            numpy array with floats) completely with the previous evaluation point. If saving_accuracy is negative, no
+            saving or lookup is performed. Changing the parameter after initialization can lead to undesired behaviour
+            and is not recommended.
         """
-        super().__init__(f, norm)
+        super().__init__(f, norm, saving_accuracy)
         self.variables = variables
         self.dim_x = int(self.f[0].shape[1])
         self.dim_y = int(self.f[0].shape[0])
@@ -266,6 +336,13 @@ class VectorFieldSymbolic(VectorField):
         self.f_num.append(sp.lambdify(self.variables, sp.reshape(sp.flatten(self.f[-1]), [self.dim_x ** len(self.f)]),
                                       modules=['numpy', 'sympy']))
         return None
+
+    def eval(self, y, N):
+        vec_field = self.get_val(y)
+        if len(vec_field) < N:
+            vec_field = vec_field + [np.array(self.f_num[rank](*list(y))) for rank in range(len(vec_field), N)]
+            self.save_val(y, vec_field)
+        return vec_field
 
     def derivative(self, y, dx, rank):
         return np.array(self.f_num[rank - 1](*list(y))) @ dx
