@@ -1,7 +1,7 @@
 import time
 import numpy as np
-import roughpath as rp
-import vectorfield as vf
+import roughpathtensor as rp
+import vectorfieldtensor as vf
 import tensoralgebra as ta
 
 
