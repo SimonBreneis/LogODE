@@ -4,8 +4,8 @@ import numpy as np
 import scipy
 from scipy import stats, interpolate
 import logode as lo
-import roughpath as rp
-import vectorfield as vf
+import roughpathtensor as rp
+import vectorfieldtensor as vf
 import sympy as sp
 import tensoralgebra as ta
 import fbm

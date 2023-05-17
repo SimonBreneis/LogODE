@@ -2,8 +2,8 @@ import time
 import numpy as np
 import scipy
 from scipy import integrate, special, stats
-import roughpath as rp
-import vectorfield as vf
+import roughpathtensor as rp
+import vectorfieldtensor as vf
 import tensoralgebra as ta
 import warnings
 

@@ -4,7 +4,7 @@ import numpy as np
 
 import examples
 import logode as lo
-import roughpath as rp
+import roughpathtensor as rp
 import tensoralgebra as ta
 
 """
