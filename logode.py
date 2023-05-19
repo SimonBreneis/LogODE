@@ -1,11 +1,12 @@
 import time
 import numpy as np
-import scipy
-from scipy import integrate, special, stats
+from scipy import integrate
 import roughpathtensor as rp
 import vectorfieldtensor as vf
 import tensoralgebra as ta
 import warnings
+from scipy.stats import linregress
+from scipy.special import factorial, gamma
 
 
 def invert_permutation(p):
@@ -21,7 +22,7 @@ def log_linear_regression(x, y):
     :param y: The function value
     :return: Exponent, constant, R-value, p-value, empirical standard deviation
     """
-    slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(np.log(x), np.log(y))
+    slope, intercept, r_value, p_value, std_err = linregress(np.log(x), np.log(y))
     return slope, np.exp(intercept), r_value, p_value, std_err
 
 
@@ -62,8 +63,8 @@ def local_log_ode_error_constant(N, dim, p):
     else:
         C = 21 * dim ** (9 / 4)
     beta = rp.beta(p)
-    return (1.13 / beta) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(
-        int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
+    return (1.13 / beta) ** (1 / int(p)) * (int(p) * C) ** int(p) / factorial(int(p)) / gamma((N + 1) / p + 1) \
+        + 0.83 * (7 / (3 * beta ** (1 / N))) ** (N + 1)
 
 
 def init_g(g=None, g_grad=None, eps=1e-06, second_level=False):
@@ -728,6 +729,8 @@ def solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1.,
 
     warnings.filterwarnings("error")
     computed_initial_sol = False
+    abs_err, rel_err, prop_loc_err, y, loc_err, times = np.inf, np.inf, np.array([]), np.array([]), np.array([]), \
+        np.array([])
     while not computed_initial_sol:
         try:
             y, prop_loc_err, loc_err, times, _ = solve_(N_=N, part_=part)
@@ -908,9 +911,11 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
 
     warnings.filterwarnings("error")
     computed_initial_sol = False
+    abs_err, rel_err, prop_loc_err, y, loc_err, times = np.inf, np.inf, np.array([]), np.array([]), np.array([]), \
+        np.array([])
+    tic = time.perf_counter()
     while not computed_initial_sol:
         try:
-            tic = time.perf_counter()
             y, prop_loc_err, loc_err, times, linear_vf = solve_(N_=N, part_=part)
             global_err = np.sum(prop_loc_err, axis=0)
             abs_err = ta.l1(global_err)
@@ -1001,8 +1006,8 @@ def solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, 
     return part, y, prop_loc_err, N
 
 
-def solve(x, f, y_0, solver, N=1, T=1., partition=None, g=None, g_grad=None, atol=1e-07, rtol=1e-04, method='RK45',
-          compute_bound=False, N_sol=1, n=32, speed=-1):
+def solve(x, f, y_0, solver, N=1, partition=None, g=None, g_grad=None, atol=1e-07, rtol=1e-04, method='RK45',
+          compute_bound=False, N_sol=1, speed=-1):
     """
     Various Log-ODE implementations.
     :param x: Rough path
@@ -1011,7 +1016,6 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, g=None, g_grad=None, ato
     :param solver: f/a (fixed or adaptive), s/f (simple or full), s/a (simple or adjoined), last letter indicating the
         kind of algorithm used (if only one implementation exists, s for standard)
     :param N: Level of the Log-ODE method
-    :param T: Final time
     :param partition: Time partition on which the Log-ODE method is applied
     :param g: Payoff function. If None, uses the identity function
     :param g_grad: Gradient of the payoff function. If None, uses numerical differentiation
@@ -1020,7 +1024,6 @@ def solve(x, f, y_0, solver, N=1, T=1., partition=None, g=None, g_grad=None, ato
     :param method: Method for solving the ODEs
     :param compute_bound: Whether the theoretical a priori error bound should be computed
     :param N_sol: Level of the solution
-    :param n: Number of time intervals
     :param speed: Non-negative number. The larger speed, the faster the algorithm, but the more inaccurate the
         estimated global error. If speed is -1, automatically finds a good value for speed
     :return: Depends on the solver

@@ -603,7 +603,6 @@ class RoughPathDyadic(RoughPath):
         return self.x.estimate_p(T, p_lower, p_upper, reset_p)
 
 
-
 def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps=15, norm=ta.l1, x_0=None):
     """
     Given the sequence X_{0, t_i} of (truncated) signatures of X for t_i in times, returns the corresponding RoughPath
@@ -632,11 +631,11 @@ def rough_path_exact_from_exact_path(times, path, sig_steps=2000, p=1, var_steps
         x_s = path[0]
         if s_ind > 0:
             ds = (s - times[s_ind - 1]) / (times[s_ind] - times[s_ind - 1])
-            x_s = path[s_ind - 1] * (path[s_ind-1].inverse()*path[s_ind])**ds
+            x_s = path[s_ind - 1] * (path[s_ind - 1].inverse() * path[s_ind]) ** ds
         x_t = path[-1]
         if t_ind < len(times) - 1:
             dt = (t - times[t_ind]) / (times[t_ind + 1] - times[t_ind])
-            x_t = path[t_ind] * (path[t_ind].inverse() * path[t_ind+1])**dt
+            x_t = path[t_ind] * (path[t_ind].inverse() * path[t_ind + 1]) ** dt
         return x_s.inverse() * x_t
 
     return RoughPathExact(path=x_rp, sig_steps=sig_steps, p=p, var_steps=var_steps, norm=norm, x_0=x_0)

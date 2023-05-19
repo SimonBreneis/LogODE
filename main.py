@@ -8,11 +8,8 @@ from functions import *
 import examples as ex
 import sympy as sp
 import timeit
+from esig import tosig as ts
 
-import esig
-help(esig)
-
-time.sleep(3600000)
 
 T = 1.
 x = ex.unit_circle(N=3)
