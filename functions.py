@@ -254,18 +254,18 @@ def discuss_MC_example(x_fun, f, y_0, N_min=1, N_max=3, T=1., n=16, g=None, g_gr
         x = x_fun(i)
         print('Starting to solve the RDE using the fully adaptive error representation')
         if i == 0:
-            partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N_min,
-                                                                                         N_max=N_max, atol=1000000*atol,
-                                                                                         rtol=100000*rtol,
-                                                                                         g=g,
-                                                                                         g_grad=g_grad, n=n, T=T,
-                                                                                         method=method,
-                                                                                         speed=speed, verbose=verbose)
+            partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_fast(x=x, f=f, y_0=y_0, N_min=N_min,
+                                                                                              N_max=N_max, atol=1000000*atol,
+                                                                                              rtol=100000*rtol,
+                                                                                              g=g,
+                                                                                              g_grad=g_grad, n=n, T=T,
+                                                                                              method=method,
+                                                                                              speed=speed, verbose=verbose)
         tic = time.perf_counter()
-        partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=y_0, N_min=N_min,
-                                                                                     N_max=N_max, atol=atol, rtol=rtol, g=g,
-                                                                                     g_grad=g_grad, n=n, T=T, method=method,
-                                                                                     speed=speed, verbose=verbose)
+        partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_fast(x=x, f=f, y_0=y_0, N_min=N_min,
+                                                                                          N_max=N_max, atol=atol, rtol=rtol, g=g,
+                                                                                          g_grad=g_grad, n=n, T=T, method=method,
+                                                                                          speed=speed, verbose=verbose)
         adaptive_times[i] = time.perf_counter() - tic
         adaptive_steps[i] = len(partition) - 1
         print(f'Finished solving the RDE using the fully adaptive error representation')

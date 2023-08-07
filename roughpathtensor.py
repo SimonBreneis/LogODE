@@ -1,7 +1,6 @@
 import numpy as np
-import scipy
 import sympy as sp
-from scipy import special
+from scipy.special import gamma, factorial
 import p_var
 import tensoralgebra as ta
 
@@ -19,7 +18,7 @@ def beta(p):
     if p == 3:
         return 22.66186
     else:
-        return 2*p*(int(p)+1)/(int(p)+1-p)  # upper bound
+        return 2 * p * (int(p) + 1) / (int(p) + 1 - p)  # upper bound
 
 
 def local_log_ode_error_constant(N, p, dim):
@@ -47,8 +46,8 @@ def local_log_ode_error_constant(N, p, dim):
     else:
         C = 21 * dim ** (9 / 4)
     b = beta(p)
-    return (1.13 / b) ** (1 / int(p)) * (int(p) * C) ** int(p) / scipy.special.factorial(
-        int(p)) / scipy.special.gamma((N + 1) / p + 1) + 0.83 * (7 / (3 * b ** (1 / N))) ** (N + 1)
+    return (1.13 / b) ** (1 / int(p)) * (int(p) * C) ** int(p) / factorial(int(p)) / gamma((N + 1) / p + 1) \
+        + 0.83 * (7 / (3 * b ** (1 / N))) ** (N + 1)
 
 
 class RoughPath:
@@ -166,8 +165,8 @@ class RoughPath:
         if norm is None:
             norm = self.norm
         variations = self.p_variation(s, t, p, var_steps, norm)
-        omegas = beta(p) * np.array([scipy.special.gamma(i/p + 1) for i in range(1, int(p)+1)]) * variations
-        omegas = np.array([omegas[i]**(p/(i+1)) for i in range(int(p))])
+        omegas = beta(p) * np.array([gamma(i / p + 1) for i in range(1, int(p) + 1)]) * variations
+        omegas = np.array([omegas[i] ** (p / (i + 1)) for i in range(int(p))])
         if by_level:
             return omegas
         return np.amax(omegas)
@@ -176,8 +175,8 @@ class RoughPath:
         return self.sig(0., 0., 1).dim()
 
     def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
-        times = np.linspace(0., T, n_intervals+1)
-        return np.sum(np.array([self.omega(s=times[i], t=times[i+1], p=p, var_steps=var_steps, norm=norm)
+        times = np.linspace(0., T, n_intervals + 1)
+        return np.sum(np.array([self.omega(s=times[i], t=times[i + 1], p=p, var_steps=var_steps, norm=norm)
                                 for i in range(n_intervals)]))
 
     def estimate_p(self, T=1., p_lower=1., p_upper=5., reset_p=True):
@@ -418,11 +417,11 @@ class RoughPathExact(RoughPath):
         times = np.linspace(s, t, self.sig_steps + 1)
         result = self.path(s, times[1]).extend_sig(N)
         for i in range(1, self.sig_steps):
-            result = result * self.path(times[i], times[i+1]).extend_sig(N)
+            result = result * self.path(times[i], times[i + 1]).extend_sig(N)
         return result.project_lie()
 
     def exact_degree(self):
-        return len(self.path(0., 0.))-1
+        return len(self.path(0., 0.)) - 1
 
     def project_space(self, indices):
         return RoughPathExact(path=lambda s, t: self.path(s, t).project_space(indices), sig_steps=self.sig_steps,

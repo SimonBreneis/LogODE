@@ -1,8 +1,6 @@
 import time
-
 import numpy as np
 import scipy.stats
-
 import logode
 from functions import *
 import examples as ex
@@ -11,6 +9,27 @@ import timeit
 from esig import tosig as ts
 
 
+x = ex.unit_circle()
+print(x.logsig(0, 0.3, 3))
+print(x.sig(0, 0.3, 3))
+param = 4
+
+
+def path(s):
+    return np.array([np.cos(2 * np.pi * param * s), np.sin(2 * np.pi * param * s)]) / np.sqrt(param)
+
+
+print(path(np.linspace(0, 0.3, 2001)).T.shape)
+print(ts.stream2sig(path(np.linspace(0, 0.3, 2001)).T, 3))
+print(ts.stream2logsig(path(np.linspace(0, 0.3, 2001)).T, 3))
+print(ts.logsigkeys(2, 3))
+time.sleep(360000)
+
+dim = 3
+levels = 4
+print(int(np.around((dim ** (levels + 1) - 1) / (dim - 1))))
+print(ts.sigdim(dim, levels))
+time.sleep(360000)
 T = 1.
 x = ex.unit_circle(N=3)
 f = ex.smooth_2x2_vector_field(N=3)
@@ -22,11 +41,35 @@ print(time.perf_counter() - tic)
 
 tic = time.perf_counter()
 f = ex.smooth_2x2_vector_field(N=3)
-_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-00, rtol=1e-00)
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation_fast(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-00, rtol=1e-00)
 print(time.perf_counter() - tic)
 
 tic = time.perf_counter()
-_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05)
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation_fast(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05, verbose=3)
+global_err = np.sum(prop_loc_err, axis=0)
+abs_err = ta.l1(global_err)
+print((y[-1],))
+print(global_err)
+print(time.perf_counter() - tic)
+
+tic = time.perf_counter()
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation_slow(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05, verbose=3)
+global_err = np.sum(prop_loc_err, axis=0)
+abs_err = ta.l1(global_err)
+print((y[-1],))
+print(global_err)
+print(time.perf_counter() - tic)
+
+tic = time.perf_counter()
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05, predict=True, verbose=3)
+global_err = np.sum(prop_loc_err, axis=0)
+abs_err = ta.l1(global_err)
+print((y[-1],))
+print(global_err)
+print(time.perf_counter() - tic)
+
+tic = time.perf_counter()
+_, y, prop_loc_err, _ = logode.solve_fully_adaptive_error_representation(x, f, y_0, N_min=1, N_max=3, T=1., n=16, atol=1e-05, rtol=1e-05, predict=False, verbose=3)
 global_err = np.sum(prop_loc_err, axis=0)
 abs_err = ta.l1(global_err)
 print((y[-1],))
@@ -150,9 +193,9 @@ v_values = np.array([])
 dt_values = np.array([])
 for i in range(100):
     x = ex.brownian_path_time(n=100000, dim=2, T=1., save_level=1)
-    partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation(x=x, f=f, y_0=np.array([0., 0.2]),
-                                                                                 N_min=2, N_max=2, atol=1e-03, rtol=100.,
-                                                                                 g=g, g_grad=g_grad, n=16, T=1., verbose=3)
+    partition, y, prop_loc_err, N = lo.solve_fully_adaptive_error_representation_fast(x=x, f=f, y_0=np.array([0., 0.2]),
+                                                                                      N_min=2, N_max=2, atol=1e-03, rtol=100.,
+                                                                                      g=g, g_grad=g_grad, n=16, T=1., verbose=3)
     v_values = np.concatenate((v_values, y[:-1, 1]))
     dt_values = np.concatenate((dt_values, partition[1:] - partition[:-1]))
 toc = time.perf_counter()

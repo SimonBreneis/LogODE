@@ -283,6 +283,14 @@ class Tensor:
         """
         pass
 
+    def to_ls_array(self):
+        """
+        Assumes that the Tensor is a log-signature and transforms the Tensor into an array, where only the ls-elements
+        are kept (the rest being discarded).
+        :return: The array
+        """
+        pass
+
     def add_dimensions(self, front=0, back=0):
         """
         If self is a tensor in T^N(R^d), then returns the tensor (1, self, 1) in T^N(R^(front + d + back)).
@@ -401,25 +409,25 @@ class SymbolicTensor(Tensor):
     def to_array(self):
         dim = self.dim()
         levels = self.n_levels()
-        length = int(np.around((dim**(levels+1) - 1)/(dim-1)))
-        result = [0]*length
+        length = ts.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
+        result = [0] * length
         result[0] = self[0]
         index = 1
         next_index = 1 + dim
-        for level in range(1, levels+1):
-            result[index:next_index] = list(self[level].reshape(next_index-index))
+        for level in range(1, levels + 1):
+            result[index:next_index] = list(self[level].reshape(next_index - index))
             index = next_index
-            next_index += dim**(level+1)
+            next_index += dim ** (level + 1)
         return sp.Array(result)
 
     def add_dimensions(self, front=0, back=0):
         result = trivial_sig_sym(front + self.dim() + back, self.n_levels())
-        index = (slice(front, front+self.dim()),)
-        for n in range(1, self.n_levels()+1):
-            level = np.zeros([front + self.dim() + back]*n)
+        index = (slice(front, front + self.dim()),)
+        for n in range(1, self.n_levels() + 1):
+            level = np.zeros([front + self.dim() + back] * n)
             level[index] = np.array(self[n].tolist())
             result[n] = sp.Array(level.tolist())
-            index = index + (slice(front, front+self.dim()),)
+            index = index + (slice(front, front + self.dim()),)
         return result
 
     def flatten(self, i):
@@ -485,10 +493,10 @@ class NumericTensor(Tensor):
         return NumericTensor([other * self.tensor[i] for i in range(len(self))])
 
     def inhomogeneous_multiplication(self, alpha):
-        return NumericTensor([self[i]*alpha for i in range(self.n_levels()+1)])
+        return NumericTensor([self[i] * alpha for i in range(self.n_levels() + 1)])
 
     def project_level(self, N):
-        if len(self) >= N+1:
+        if len(self) >= N + 1:
             return NumericTensor([self.tensor[i] for i in range(N + 1)])
         else:
             new_tens = trivial_sig_num(self.dim(), N)
@@ -498,7 +506,7 @@ class NumericTensor(Tensor):
 
     def project_space(self, indices):
         projected_tensor = [self[0]]
-        for i in range(1, self.n_levels()+1):
+        for i in range(1, self.n_levels() + 1):
             new_tensor = self[i]
             for j in range(i):
                 new_tensor = np.take(new_tensor, indices, axis=j)
@@ -508,26 +516,23 @@ class NumericTensor(Tensor):
     def to_array(self):
         dim = self.dim()
         levels = self.n_levels()
-        if dim == 1:
-            length = levels + 1
-        else:
-            length = int(np.around((dim**(levels+1) - 1)/(dim-1)))
+        length = ts.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
         result = np.empty(length)
         result[0] = self[0]
         index = 1
         next_index = 1 + dim
-        for level in range(1, levels+1):
+        for level in range(1, levels + 1):
             result[index:next_index] = self[level].flatten()
             index = next_index
-            next_index += dim**(level+1)
+            next_index += dim ** (level + 1)
         return result
 
     def add_dimensions(self, front=0, back=0):
         result = trivial_sig_num(front + self.dim() + back, self.n_levels())
-        index = (slice(front, front+self.dim()),)
-        for n in range(1, self.n_levels()+1):
+        index = (slice(front, front + self.dim()),)
+        for n in range(1, self.n_levels() + 1):
             result[n][index] = self[n]
-            index = index + (slice(front, front+self.dim()),)
+            index = index + (slice(front, front + self.dim()),)
         return result
 
     def save(self, directory):
