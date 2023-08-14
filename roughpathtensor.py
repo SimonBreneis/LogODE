@@ -172,6 +172,10 @@ class RoughPath:
         return np.amax(omegas)
 
     def dim(self):
+        """
+        Returns the dimension (of the first level) of the rough path.
+        :return: The dimension
+        """
         return self.sig(0., 0., 1).dim()
 
     def rough_total_omega_estimate(self, T=1., n_intervals=100, p=0., var_steps=0, norm=None):
