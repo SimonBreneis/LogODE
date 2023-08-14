@@ -1,6 +1,6 @@
 import numpy as np
 import tensoralgebra as ta
-from esig import tosig as ts
+import esig
 import scipy
 
 
@@ -148,15 +148,15 @@ class RoughPathDiscrete(RoughPath):
         return val_array
 
     def sig(self, s, t, N):
-        return ts.stream2sig(self.__values_in_interval(s, t), N)
+        return esig.stream2sig(self.__values_in_interval(s, t), N)
 
     def logsig(self, s, t, N):
-        return ts.stream2logsig(self.__values_in_interval(s, t), N)
+        return esig.stream2logsig(self.__values_in_interval(s, t), N)
 
     def at(self, t, N):
         val_array = self.__values_in_interval(0, t)
         val_array = np.concatenate((np.zeros(self.dim()), val_array), axis=0)
-        return ts.stream2sig(val_array, N)
+        return esig.stream2sig(val_array, N)
 
     def dim(self):
         return self.val.shape[1]
@@ -185,15 +185,15 @@ class RoughPathContinuous(RoughPath):
         self.sig_steps = sig_steps
 
     def sig(self, s, t, N):
-        return ts.stream2sig(self.path(np.linspace(s, t, self.sig_steps + 1)).T, N)
+        return esig.stream2sig(self.path(np.linspace(s, t, self.sig_steps + 1)).T, N)
 
     def logsig(self, s, t, N):
-        return ts.stream2logsig(self.path(np.linspace(s, t, self.sig_steps + 1)).T, N)
+        return esig.stream2logsig(self.path(np.linspace(s, t, self.sig_steps + 1)).T, N)
 
     def at(self, t, N):
         val_array = self.path(np.linspace(0, t, self.sig_steps + 1)).T
         val_array = np.concatenate((np.zeros(self.dim()), val_array), axis=0)
-        return ts.stream2sig(val_array, N)
+        return esig.stream2sig(val_array, N)
 
     def dim(self):
         return len(self.at_0)

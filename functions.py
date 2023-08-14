@@ -1,7 +1,6 @@
 import time
 import matplotlib.pyplot as plt
 import numpy as np
-
 import examples
 import logode as lo
 import roughpathtensor as rp

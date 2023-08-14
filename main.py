@@ -6,7 +6,7 @@ from functions import *
 import examples as ex
 import sympy as sp
 import timeit
-from esig import tosig as ts
+import esig
 
 
 x = ex.unit_circle()
@@ -20,15 +20,15 @@ def path(s):
 
 
 print(path(np.linspace(0, 0.3, 2001)).T.shape)
-print(ts.stream2sig(path(np.linspace(0, 0.3, 2001)).T, 3))
-print(ts.stream2logsig(path(np.linspace(0, 0.3, 2001)).T, 3))
-print(ts.logsigkeys(2, 3))
+print(esig.stream2sig(path(np.linspace(0, 0.3, 2001)).T, 3))
+print(esig.stream2logsig(path(np.linspace(0, 0.3, 2001)).T, 3))
+print(esig.logsigkeys(2, 3))
 time.sleep(360000)
 
 dim = 3
 levels = 4
 print(int(np.around((dim ** (levels + 1) - 1) / (dim - 1))))
-print(ts.sigdim(dim, levels))
+print(esig.sigdim(dim, levels))
 time.sleep(360000)
 T = 1.
 x = ex.unit_circle(N=3)

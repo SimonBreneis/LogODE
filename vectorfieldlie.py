@@ -1,7 +1,7 @@
 import numpy as np
 import sympy as sp
 import tensoralgebra as ta
-from esig import tosig as ts
+import esig
 
 
 class VectorField:
@@ -41,7 +41,7 @@ class VectorField:
         :return: The degree N of the log-signature
         """
         N = 1
-        while len(ls) != ts.logsigdim(self.dim_x, N):
+        while len(ls) != esig.logsigdim(self.dim_x, N):
             N = N + 1
         return N
 
@@ -325,7 +325,7 @@ class VectorFieldSymbolic(VectorField):
             return None
         if self.computed_level < N - 1:
             self.compute_all_lie_brackets(N - 1)
-        indices = ts.logsigkeys(self.dim_x, N)
+        indices = esig.logsigkeys(self.dim_x, N)
         indices = indices.split(' ')
         for index in indices:
             self.new_lie_bracket(index)
@@ -336,7 +336,7 @@ class VectorFieldSymbolic(VectorField):
 
     def eval(self, y, N):
         vec_field = self.get_val(y)
-        if len(vec_field) < ts.logsigdim(self.dim_x, N):
+        if len(vec_field) < esig.logsigdim(self.dim_x, N):
             vec_field = np.array(self.f_num_full[N](*list(y)))
             self.save_val(y, vec_field)
         return vec_field
