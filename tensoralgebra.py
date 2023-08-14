@@ -1,6 +1,6 @@
 import numpy as np
 import sympy as sp
-from esig import tosig as ts
+import esig
 
 
 def l1(x, axis=None):
@@ -282,7 +282,7 @@ class Tensor:
         :return: The array
         """
         pass
-
+    ''' 
     def to_ls_array(self):
         """
         Assumes that the Tensor is a log-signature and transforms the Tensor into an array, where only the ls-elements
@@ -290,7 +290,7 @@ class Tensor:
         :return: The array
         """
         pass
-
+    '''
     def add_dimensions(self, front=0, back=0):
         """
         If self is a tensor in T^N(R^d), then returns the tensor (1, self, 1) in T^N(R^(front + d + back)).
@@ -409,7 +409,7 @@ class SymbolicTensor(Tensor):
     def to_array(self):
         dim = self.dim()
         levels = self.n_levels()
-        length = ts.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
+        length = esig.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
         result = [0] * length
         result[0] = self[0]
         index = 1
@@ -516,7 +516,7 @@ class NumericTensor(Tensor):
     def to_array(self):
         dim = self.dim()
         levels = self.n_levels()
-        length = ts.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
+        length = esig.sigdim(dim, levels) if dim > 1 and levels > 1 else dim + levels
         result = np.empty(length)
         result[0] = self[0]
         index = 1
@@ -607,7 +607,7 @@ def sig(x, N):
     if N == 1:
         return NumericTensor([1., x[-1, :] - x[0, :]])
     dim = x.shape[1]
-    sig_vec = ts.stream2sig(x, N)
+    sig_vec = esig.stream2sig(x, N)
     indices = [int((dim ** (k + 1) - 1) / (dim - 1) + 0.1) for k in range(N + 1)]
     indices.insert(0, 0)
     res = [sig_vec[indices[i]:indices[i + 1]].reshape([dim] * i) for i in range(N + 1)]
