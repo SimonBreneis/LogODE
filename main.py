@@ -1,14 +1,268 @@
 import time
+
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats
-import logode
-from functions import *
 import examples as ex
 import sympy as sp
 import timeit
+from functions import *
+import logode
 import esig
+import roughpy as rp
 
 
+def a(p_, al_, gam_, eps_):
+    return al_ ** (3 / p_) * (1 - al_) ** (1 / p_) * eps_ - (1 - al_ ** (3 / p_) - gam_ ** (3 / p_))
+
+
+def b(p_, al_, gam_):
+    return (2 * al_ ** (1 / p_) + 3 / 2 * (1 - al_) ** (1 / p_)) * al_ ** (1 / p_) * (1 - al_) ** (1 / p_) \
+           + 1 / 2 * (1 - al_ - gam_) ** (2 / p_) * gam_ ** (1 / p_) + 3 / 2 * (1 - al_ - gam_) ** (1 / p_) * gam_ ** (2 / p_)
+
+
+def C_001(p_, al_, gam_, eps_):
+    a_ = a(p_, al_, gam_, eps_)
+    b_ = b(p_, al_, gam_)
+    if a_ >= 0:
+        return np.inf
+    else:
+        return - b_ / a_
+
+
+def C_002(p_, eps_, eta_):
+    res = -scipy.optimize.minimize(lambda x_: -C_001(p_, x_[0], x_[1], eps_),
+                                    x0=np.array([eta_/2, (1-eta_)/2]), bounds=((0, eta_), (0, 1-eta_)),
+                                   method='Nelder-Mead').fun
+    print(eta_, res)
+    return res
+
+
+def C_003(p_, eps_):
+    return scipy.optimize.minimize(lambda x_: C_002(p_, eps_, x_[0]), x0=np.array([0.5]), bounds=((0, 1),),
+                                   method='Nelder-Mead').fun
+
+
+p_vals = np.linspace(2., 3, 51)[:-1]
+sols = np.empty(len(p_vals))
+for i in range(len(p_vals)):
+    sols[i] = C_003(p_vals[i], 2 * (1 - 2 ** (1 - 3 / p_vals[i])))
+
+plt.plot(p_vals, sols * (1 - 2 ** (1 - 3 / p_vals)))
+plt.plot(p_vals, 1.8 + 2 * (p_vals-2))
+plt.show()
+print(C_001(2.5, 0, 0, 0.1))
+print(C_002(2.5, 0.1, 0.8))
+print(C_003(2.5, 1))
+
+time.sleep(360000)
+
+T = 1.
+x = ex.unit_circle(N=3)
+f = ex.smooth_2x2_vector_field(N=3)
+y_0 = np.array([0, 0])
+tic = time.perf_counter()
+_, y, error_bounds, time_vec = logode.solve_fixed(x, f, y_0, N=3, partition=np.linspace(0, 1, 101))
+plt.plot(y[:, 0], y[:, 1])
+plt.show()
+
+'''
+t = np.linspace(0, 1, 1001)
+x_1_1 = lambda t_: t_
+x_1_2 = lambda t_: np.zeros_like(t_)
+x_2_1 = lambda t_: 2 - np.cos(2 * np.pi * t)
+x_2_2 = lambda t_: -np.sin(2 * np.pi * t)
+plt.plot(x_1_1(t), x_1_2(t), 'b-')
+plt.plot(x_2_1(t), x_2_2(t), 'b-')
+plt.tight_layout()
+plt.show()
+t = np.linspace(0, 5.32597, 1001)
+r = 1.01409
+phi = 2.11622388
+x_3_1 = lambda t_: r * (np.cos((t_ + phi) / r) - np.cos(phi / r))
+x_3_2 = lambda t_: r * (np.sin((t_ + phi) / r) - np.sin(phi / r))
+plt.plot(x_3_1(t), x_3_2(t))
+plt.tight_layout()
+plt.show()
+t = np.linspace(0, 1, 78967)
+n = 10
+x_4_1 = lambda t_: t_ + 1 / n * np.cos(2 * np.pi * n ** 2 * t_)
+x_4_2 = lambda t_: 1 / n * np.sin(2 * np.pi * n ** 2 * t_)
+plt.plot(x_4_1(t), x_4_2(t))
+plt.tight_layout()
+plt.show()
+'''
+'''
+p = np.linspace(2.001, 3, 10001)
+expr = (100* 2**((4*p-2)/(3*p)) *48*(1 + 2**(-1/4))**2 * p*(15*p-18)**2/(81*np.exp(1)*(1 - 2**(-(p-2)/(3*p)))**2 *(p-2)))**((p-1)/(2*p))*(4*(1+2**(-1/4))*np.exp(1)*(p/(p+1))**0.5/(1 - 2**(-(1/3-2/(3*p)))))
+expr = (100* (p+1)* 2**((4*p-2)/(3*p)) *48*(1 + 2**(-1/4))**2 * p*(15*p-18)**2/(27*np.exp(1)*(1 - 2**(-(p-2)/(3*p)))**2 *(p-2)**2))**((p-1)/(2*p))*(4*np.sqrt(3)*(1+2**(-1/4))*(p/(p+1))**0.5/(1 - 2**(-(1/3-2/(3*p)))))
+plt.plot(p, expr)
+plt.show()
+
+p = np.linspace(2, 3, 10001)
+C_3_11 = 4 * scipy.special.zeta(2)
+C_3_1p = 2 ** (1 + 1 / p) * scipy.special.zeta(1 + 1 / p)
+gamma = 1.18
+beta = 5
+left = 1 / (gamma ** (1 / p) - 1)
+right = C_3_11 / (-C_3_1p * gamma ** (1 / p) + np.sqrt(C_3_1p ** 2 * gamma ** (2 / p) + 0.5 * C_3_11 * ((beta - gamma) ** (2 / p) - 1)))
+plt.plot(p, left)
+plt.plot(p, right)
+plt.plot(p, 15 * p - 18)
+plt.show()
+'''
+'''
+p = np.linspace(2.0001, 2.9999, 1000)
+C_1 = 0
+C_2 = 0
+C_3 = 2 ** (1 + 1 / p) * scipy.special.zeta(1 + 1 / p)
+C_3_1_1 = 4 * scipy.special.zeta(4.)
+C_4 = (C_3 + C_3_1_1) / 2 ** (2 / p - 1 / 2) + 1
+C_5 = 0
+C_6 = 1 / (2 * C_4 ** 2)
+plt.plot(p, C_6)
+plt.show()
+
+
+p = np.linspace(2.0001, 2.9999, 1000)
+C_6 = 10 / (1 - 2 ** (1 - 3 / p))
+C_pN = 2 ** (3 / p) * scipy.special.zeta(3 / p)
+A_0 = (5 / 4 - 2 ** (-1 - 3 / p))
+leading = C_pN / C_6  # 2 ** (4 / p) * 9 / 160
+A_1 = leading * 2 ** (1 - 2 / p)
+A_2 = leading * (2 ** (-1 / p) * 3 + 2 ** (2 - 3 / p) * A_0 ** 2 / C_6)
+A_3 = leading * (5 * 2 ** (-2 / p) + 2 ** (1 - 2 / p) * A_0 ** 2 + 2 ** (-1 / p) * 7 * A_0)
+A_4 = leading * 2 ** (1 - 2 / p) * ((5 / 2) ** (p / 2) + 1 / 2 * A_0 ** p) ** (2 / p)
+A_5 = leading * 3 * A_0
+B_1 = 3 ** (1 - 1 / p) * A_2 / (5 ** (2 / p - 1) - A_1) / C_6
+B_2 = 3 ** (1 - 1 / p) * ((A_3 + 3 / 2) / (5 ** (2 / p - 1) - A_1) / C_6 + 1)
+B_3 = 3 ** (1 - 1 / p) * (A_4 / (5 ** (2 / p - 1) - A_1) / C_6 + 1)
+B_4 = 3 ** (1 - 1 / p) * (A_5 + 1) / (5 ** (2 / p - 1) - A_1)
+C_1 = B_2 / (1 - B_1) + 1
+C_2 = 2 ** (1 - 1 / p) * (B_3 / (1 - B_1) + 1)
+C_3 = 2 ** (1 - 1 / p) * B_4 / (1 - B_1)
+
+C_6_2 = 10 / (1 - 2 ** (1 - 3 / 2))
+C_pN_2 = 2 ** (3 / 2) * scipy.special.zeta(3 / 2)
+A_0_2 = (5 / 4 - 2 ** (-1 - 3 / 2))
+leading_2 = C_pN_2 / C_6_2
+A_1_2 = leading_2
+A_2_2 = leading_2 * (2 ** (-1 / 2) * 3 + 2 ** (1 / 2) * A_0_2 ** 2 / C_6_2)
+A_3_2 = leading_2 * (5 / 2 + A_0_2 ** 2 + 2 ** (-1 / 2) * 7 * A_0_2)
+B_1_2 = 3 ** (1 - 1 / 2) * A_2_2 / (5 ** (2 / 2 - 1) - A_1_2) / C_6_2
+B_2_2 = 3 ** (1 - 1 / 2) * ((A_3_2 + 3 / 2) / (5 ** (2 / 2 - 1) - A_1_2) / C_6_2 + 1)
+C_1_2 = B_2_2 / (1 - B_1_2) + 1
+print(6.97 * np.sqrt(2))
+print(6.97 * (10 / (1 - 2 ** (1 - 3 / 2))) ** (1 / 4) * 2 ** (3 / 4))
+better_const = C_1_2 / (1 - C_1_2 * C_6_2 ** (- 1 / 2))
+print(better_const * np.sqrt(2))
+print(better_const * (10 / (1 - 2 ** (1 - 3 / 2))) ** (1 / 4) * 2 ** (3 / 4))
+L_p_2 = 2 * np.sqrt(7) * C_pN_2
+K_p_2 = 9 * 8 * np.sqrt(6) * np.sqrt(C_pN_2)
+K_p_2_dash = 3 * (1 + K_p_2 ** 2)
+c_pN_2 = 4 * np.exp(4) * (L_p_2 + K_p_2 ** 2 + K_p_2_dash) ** 2
+c_pn_2_dash = np.sqrt(c_pN_2)
+print(2 * c_pn_2_dash)
+print(2 * c_pN_2)
+
+
+plt.loglog(p, A_1, label='A1')
+plt.loglog(p, A_2, label='A2')
+plt.loglog(p, A_3, label='A3')
+plt.loglog(p, A_4, label='A4')
+plt.loglog(p, A_5, label='A5')
+plt.legend(loc='best')
+plt.show()
+plt.loglog(p, B_1, label='B1')
+plt.loglog(p, B_2, label='B2')
+plt.loglog(p, B_3, label='B3')
+plt.loglog(p, B_4, label='B4')
+plt.legend(loc='best')
+plt.show()
+plt.loglog(p, C_1, label='C1')
+plt.loglog(p, C_2, label='C2')
+plt.loglog(p, C_3, label='C3')
+plt.legend(loc='best')
+plt.show()
+plt.loglog(p, C_6 ** (-1), label='C6-1')
+plt.loglog(p, 3.27 ** (-p), label='C-p')
+plt.legend(loc='best')
+plt.show()
+plt.loglog(p, C_1 / (1 - C_1 * C_6 ** (-1 / p)))
+plt.show()
+'''
+
+p = np.linspace(2.0001, 3, 1001)
+e = np.exp(1)
+r = e / (1 + (8 * e**4 / (p-2))**(1/3))
+const = 2 ** ((p+1)/2) * (2 ** (-p) / ((r * (1-r))**2) + (p/2)**(2/(p-2)) / (1 - r * (2 / p) ** (1 / (p-2))) ** 2 * r ** (p-2) * p / (p-2)) ** (1/2)
+plt.plot(p, const * (p-2) ** (1/2))
+plt.plot(p, 2*p+4)
+plt.show()
+
+C_3 = lambda x: 2 ** (1 + 1 / x) * scipy.special.zeta(1 + 1 / x)
+C_13 = lambda x: 1 + np.sqrt(1 + 2 * C_3(x))
+C_14 = lambda x: 1 + np.sqrt(2) * np.sqrt(C_3(1) + C_3(x))
+print(1 / (4 * C_14(2.5)**2))
+print(2 * C_13(2.5) ** 2 / (4 * C_14(2.5)**2))
+print(2 * C_13(2.5) ** 2 / (4 * C_14(2.5)**2) *(4 * C_14(2.5)**2))
+
+print(2**(3/4) * C_3(2.5)**(1/4), np.sqrt(2) * C_3(1)**(1/4) + 2 * np.sqrt(C_3(2.5)), np.sqrt(2 * C_3(1)))
+fun = lambda x: 1 + 2 * (2 * C_3(2.5) + C_3(1) * x) ** (1 / 2) * x ** (1 / 2) + 4 * C_3(2.5) * x - 2 * C_3(1) * x ** 2
+fun = lambda x: 1 + 2 * (2 + x) ** (1 / 2) * x ** (1 / 2) + 4 * x - 2 * x ** 2
+fun = lambda x: 1 + np.sqrt(2) * (4 + x) ** (1 / 2) * x ** (1 / 2) + 4 * x - x ** 2
+fun = lambda x, p, eta: min((1 + 2 ** (p/4) * (8 + x) ** (p/4) * x ** (p/4) + (8 + x) ** (p/2) * x ** (p/2)) ** (2/p),
+                            2 ** (1 - 2/p) * 5 * (1 + x ** p) ** (2/p)) - x ** 2 / (2 * eta)
+fun_1 = lambda x, p, eta: (2 ** (1 - 2/p) * 5 * (1 + x ** p) ** (2/p)) - x ** 2 / (2 * eta)
+fun_2 = lambda x, p, eta: ((1 + 2 ** (p/4) * (8 + x) ** (p/4) * x ** (p/4) + (8 + x) ** (p/2) * x ** (p/2)) ** (2/p)) - x ** 2 / (2 * eta)
+opt = scipy.optimize.minimize_scalar(fun=lambda x: -fun(x, 2.5, 0.25), bounds=(0, 100))
+print(opt.x, fun(opt.x, 2.5, 0.25) / 4, fun(opt.x, 2.5, 0.25), 1/4)
+eta_arr = np.linspace(0, 0.49, 10000)[1:]
+exponents_1 = np.array([fun_2(scipy.optimize.minimize_scalar(fun=lambda x: -fun_2(x, 2.5, eta_arr[i]), bounds=(0, 30 * eta_arr[i] / (1 - 2 * eta_arr[i])), method='bounded').x, 2.5, eta_arr[i]) for i in range(len(eta_arr))])
+plt.plot(eta_arr, exponents_1)
+exponents_2 = np.array([fun_1(scipy.optimize.minimize_scalar(fun=lambda x: -fun_1(x, 2.5, eta_arr[i]), bounds=(0, 80 * eta_arr[i] / (1 - 2 * eta_arr[i])), method='bounded').x, 2.5, eta_arr[i]) for i in range(len(eta_arr))])
+plt.plot(eta_arr, exponents_2)
+plt.show()
+plt.plot(eta_arr, (6 * eta_arr ** (5/11) + 36 * eta_arr / (1 - 2 * eta_arr)) / (exponents_1-1))
+plt.yscale('log')
+plt.title('Factor we lose in the exponent')
+plt.xlabel('eta')
+plt.tight_layout()
+plt.show()
+
+p = np.linspace(2, 3, 1000)
+plt.plot(p, 2 ** ((6*p+8)/(8-p)) / p - 2 ** ((9*p-16) / (8-p)))
+plt.show()
+plt.plot(p, (2 ** (1/4) + 9 ** (p/2)) / p * 2 ** ((2 * p ** 2 - 3 * p + 8) / (8 - p)))
+plt.show()
+time.sleep(2500000)
+
+'''
+stream = rp.LieIncrementStream.from_increments([[0., 1., 2.], [3., 4., 5.]], depth=2)
+
+#stream = rp.LieIncrementStream.from_increments([[0., 1., 2.], [3., 4., 5.]], width=3, depth=2, coeffs=rp.DPReal)
+interval = rp.RealInterval(0., 2.)
+#lsig = stream.log_signature(interval)
+#help(lsig)
+#sig = stream.signature(interval)
+#print(lsig)
+#print(sig)
+#print(np.array(lsig))
+#print(np.array(sig))
+context = rp.get_context(width=3, depth=2, coeffs=rp.DPReal)
+#tensor_form = context.lie_to_tensor(lsig)
+#print(tensor_form)
+#print(tensor_form.exp())
+#help(tensor_form)
+help(context)
+#help(context.lie_basis())
+basis = context.tensor_basis
+for key in basis:
+    print(key)
+print(basis)
+time.sleep(360000)
+'''
+'''
 x = ex.unit_circle()
 print(x.logsig(0, 0.3, 3))
 print(x.sig(0, 0.3, 3))
@@ -24,12 +278,15 @@ print(esig.stream2sig(path(np.linspace(0, 0.3, 2001)).T, 3))
 print(esig.stream2logsig(path(np.linspace(0, 0.3, 2001)).T, 3))
 print(esig.logsigkeys(2, 3))
 time.sleep(360000)
-
+'''
+'''
 dim = 3
 levels = 4
 print(int(np.around((dim ** (levels + 1) - 1) / (dim - 1))))
 print(esig.sigdim(dim, levels))
 time.sleep(360000)
+'''
+
 T = 1.
 x = ex.unit_circle(N=3)
 f = ex.smooth_2x2_vector_field(N=3)
